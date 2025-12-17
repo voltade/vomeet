@@ -3,13 +3,13 @@ import { log } from '../utils';
 
 export async function ensureBrowserUtils(page: Page, scriptFsPath: string): Promise<void> {
   // 0) If already present, skip
-  const already = await page.evaluate(() => !!(window as any).VexaBrowserUtils);
+  const already = await page.evaluate(() => !!(window as any).VomeetBrowserUtils);
   if (already) return;
 
   // 1) Try simple addScriptTag (works when bypassCSP true)
   try {
     await page.addScriptTag({ path: scriptFsPath });
-    const ok = await page.evaluate(() => !!(window as any).VexaBrowserUtils);
+    const ok = await page.evaluate(() => !!(window as any).VomeetBrowserUtils);
     if (ok) return;
   } catch (e: any) {
     log(`Warning: addScriptTag failed: ${e?.message || e}`);
@@ -25,7 +25,7 @@ export async function ensureBrowserUtils(page: Page, scriptFsPath: string): Prom
         if (!factory || typeof factory.createPolicy !== 'function') {
           return Promise.reject(new Error('Trusted Types not available'));
         }
-        const policy = factory.createPolicy('vexaPolicy', {
+        const policy = factory.createPolicy('vomeetPolicy', {
           createScript: (s: string) => s,
           createScriptURL: (s: string) => s
         } as any);
@@ -43,7 +43,7 @@ export async function ensureBrowserUtils(page: Page, scriptFsPath: string): Prom
           try {
             const factory = (window as any).trustedTypes;
             if (factory && typeof factory.createPolicy === 'function') {
-              const policy = factory.createPolicy('vexaPolicy', {
+              const policy = factory.createPolicy('vomeetPolicy', {
                 createScriptURL: (u: string) => u
               } as any);
               if (policy && typeof (policy as any).createScriptURL === 'function') {
@@ -70,9 +70,9 @@ export async function ensureBrowserUtils(page: Page, scriptFsPath: string): Prom
   }
 
   // 3) Verify
-  const loaded = await page.evaluate(() => !!(window as any).VexaBrowserUtils);
+  const loaded = await page.evaluate(() => !!(window as any).VomeetBrowserUtils);
   if (!loaded) {
-    throw new Error('VexaBrowserUtils global is missing after injection');
+    throw new Error('VomeetBrowserUtils global is missing after injection');
   }
 }
 

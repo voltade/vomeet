@@ -1,6 +1,6 @@
 # Bot States Reference
 
-This document describes all possible states for bots in the Vexa system.
+This document describes all possible states for bots in the Vomeet system.
 
 ## Overview
 

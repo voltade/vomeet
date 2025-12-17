@@ -23,7 +23,7 @@ submodules:
 	@git submodule update --init --recursive
 
 # Default bot image tag if not specified in .env
-BOT_IMAGE_NAME ?= vexa-bot:dev
+BOT_IMAGE_NAME ?= vomeet-bot:dev
 
 # Check if Docker daemon is running
 check_docker:
@@ -55,7 +55,7 @@ endif
 			echo "VAD_FILTER_THRESHOLD=0.5" >> env-example.cpu; \
 			echo "WHISPER_MODEL_SIZE=tiny" >> env-example.cpu; \
 			echo "DEVICE_TYPE=cpu" >> env-example.cpu; \
-			echo "BOT_IMAGE_NAME=vexa-bot:dev" >> env-example.cpu; \
+			echo "BOT_IMAGE_NAME=vomeet-bot:dev" >> env-example.cpu; \
 			echo "# Exposed Host Ports" >> env-example.cpu; \
 			echo "API_GATEWAY_HOST_PORT=8056" >> env-example.cpu; \
 			echo "ADMIN_API_HOST_PORT=8057" >> env-example.cpu; \
@@ -74,7 +74,7 @@ endif
 			echo "VAD_FILTER_THRESHOLD=0.5" >> env-example.gpu; \
 			echo "WHISPER_MODEL_SIZE=medium" >> env-example.gpu; \
 			echo "DEVICE_TYPE=cuda" >> env-example.gpu; \
-			echo "BOT_IMAGE_NAME=vexa-bot:dev" >> env-example.gpu; \
+			echo "BOT_IMAGE_NAME=vomeet-bot:dev" >> env-example.gpu; \
 			echo "# Exposed Host Ports" >> env-example.gpu; \
 			echo "API_GATEWAY_HOST_PORT=8056" >> env-example.gpu; \
 			echo "ADMIN_API_HOST_PORT=8057" >> env-example.gpu; \
@@ -105,7 +105,7 @@ endif
 			echo "VAD_FILTER_THRESHOLD=0.5" >> env-example.cpu; \
 			echo "WHISPER_MODEL_SIZE=tiny" >> env-example.cpu; \
 			echo "DEVICE_TYPE=cpu" >> env-example.cpu; \
-			echo "BOT_IMAGE_NAME=vexa-bot:dev" >> env-example.cpu; \
+			echo "BOT_IMAGE_NAME=vomeet-bot:dev" >> env-example.cpu; \
 			echo "# Exposed Host Ports" >> env-example.cpu; \
 			echo "API_GATEWAY_HOST_PORT=8056" >> env-example.cpu; \
 			echo "ADMIN_API_HOST_PORT=8057" >> env-example.cpu; \
@@ -124,7 +124,7 @@ endif
 			echo "VAD_FILTER_THRESHOLD=0.5" >> env-example.gpu; \
 			echo "WHISPER_MODEL_SIZE=medium" >> env-example.gpu; \
 			echo "DEVICE_TYPE=cuda" >> env-example.gpu; \
-			echo "BOT_IMAGE_NAME=vexa-bot:dev" >> env-example.gpu; \
+			echo "BOT_IMAGE_NAME=vomeet-bot:dev" >> env-example.gpu; \
 			echo "# Exposed Host Ports" >> env-example.gpu; \
 			echo "API_GATEWAY_HOST_PORT=8056" >> env-example.gpu; \
 			echo "ADMIN_API_HOST_PORT=8057" >> env-example.gpu; \
@@ -159,21 +159,21 @@ download-model:
 	@echo "---> Downloading Whisper model (this may take a while)..."
 	@. .venv/bin/activate && python download_model.py
 
-# Build the standalone vexa-bot image
+# Build the standalone vomeet-bot image
 # Uses BOT_IMAGE_NAME from .env if available, otherwise falls back to default
 build-bot-image: check_docker
 	@if [ -f .env ]; then \
 		ENV_BOT_IMAGE_NAME=$$(grep BOT_IMAGE_NAME .env | cut -d= -f2); \
 		if [ -n "$$ENV_BOT_IMAGE_NAME" ]; then \
 			echo "---> Building $$ENV_BOT_IMAGE_NAME image (from .env)..."; \
-			docker build -t $$ENV_BOT_IMAGE_NAME -f services/vexa-bot/core/Dockerfile ./services/vexa-bot/core; \
+			docker build -t $$ENV_BOT_IMAGE_NAME -f services/vomeet-bot/core/Dockerfile ./services/vomeet-bot/core; \
 		else \
 			echo "---> Building $(BOT_IMAGE_NAME) image (BOT_IMAGE_NAME not found in .env)..."; \
-			docker build -t $(BOT_IMAGE_NAME) -f services/vexa-bot/core/Dockerfile ./services/vexa-bot/core; \
+			docker build -t $(BOT_IMAGE_NAME) -f services/vomeet-bot/core/Dockerfile ./services/vomeet-bot/core; \
 		fi; \
 	else \
 		echo "---> Building $(BOT_IMAGE_NAME) image (.env file not found)..."; \
-		docker build -t $(BOT_IMAGE_NAME) -f services/vexa-bot/core/Dockerfile ./services/vexa-bot/core; \
+		docker build -t $(BOT_IMAGE_NAME) -f services/vomeet-bot/core/Dockerfile ./services/vomeet-bot/core; \
 	fi
 
 # Build Docker Compose service images
@@ -232,7 +232,7 @@ test: check_docker
 		echo "    Main API:  http://localhost:8056/docs"; \
 		echo "    Admin API: http://localhost:8057/docs"; \
 	fi
-	@chmod +x testing/run_vexa_interaction.sh
+	@chmod +x testing/run_vomeet_interaction.sh
 	@echo "---> Running test script..."
 	@# Check if running in CPU mode and display warning
 	@if [ -f .env ]; then \
@@ -244,17 +244,17 @@ test: check_docker
 			echo "   • This configuration is for DEVELOPMENT ONLY"; \
 			echo "   • Transcriptions will have LOW QUALITY and HIGH LATENCY"; \
 			echo "   • NOT suitable for production use"; \
-			echo "   • To experience Vexa's full potential, run on GPU with: make all TARGET=gpu"; \
+			echo "   • To experience Vomeet's full potential, run on GPU with: make all TARGET=gpu"; \
 			echo ""; \
 		fi; \
 	fi
 	@if [ -n "$(MEETING_ID)" ]; then \
 		echo "---> Using provided meeting ID: $(MEETING_ID)"; \
-		./testing/run_vexa_interaction.sh "$(MEETING_ID)"; \
+		./testing/run_vomeet_interaction.sh "$(MEETING_ID)"; \
 	else \
 		echo "---> No meeting ID provided. Use 'make test MEETING_ID=abc-defg-hij' to test with a specific meeting."; \
 		echo "---> Running in interactive mode..."; \
-		./testing/run_vexa_interaction.sh; \
+		./testing/run_vomeet_interaction.sh; \
 	fi
 
 # Quick API connectivity test (no user interaction required)
@@ -284,7 +284,7 @@ test-api: check_docker
 
 # Test system setup without requiring meeting ID
 test-setup: check_docker
-	@echo "---> Testing Vexa system setup..."
+	@echo "---> Testing Vomeet system setup..."
 	@echo "---> API Documentation URLs:"
 	@if [ -f .env ]; then \
 		API_PORT=$$(grep -E '^[[:space:]]*API_GATEWAY_HOST_PORT=' .env | cut -d= -f2- | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$$//'); \
@@ -315,7 +315,7 @@ migrate-or-init: check_docker
 	fi; \
 	echo "---> Waiting for database to be ready..."; \
 	count=0; \
-	while ! docker compose exec -T postgres pg_isready -U postgres -d vexa -q; do \
+	while ! docker compose exec -T postgres pg_isready -U postgres -d vomeet -q; do \
 		if [ $$count -ge 12 ]; then \
 			echo "ERROR: Database did not become ready in 60 seconds."; \
 			exit 1; \
@@ -325,11 +325,11 @@ migrate-or-init: check_docker
 		count=$$((count+1)); \
 	done; \
 	echo "---> Database is ready. Checking its state..."; \
-	if docker compose exec -T postgres psql -U postgres -d vexa -t -c "SELECT 1 FROM information_schema.tables WHERE table_name = 'alembic_version';" | grep -q 1; then \
+	if docker compose exec -T postgres psql -U postgres -d vomeet -t -c "SELECT 1 FROM information_schema.tables WHERE table_name = 'alembic_version';" | grep -q 1; then \
 		echo "STATE: Alembic-managed database detected."; \
 		echo "ACTION: Running standard migrations to catch up to 'head'..."; \
 		$(MAKE) migrate; \
-	elif docker compose exec -T postgres psql -U postgres -d vexa -t -c "SELECT 1 FROM information_schema.tables WHERE table_name = 'meetings';" | grep -q 1; then \
+	elif docker compose exec -T postgres psql -U postgres -d vomeet -t -c "SELECT 1 FROM information_schema.tables WHERE table_name = 'meetings';" | grep -q 1; then \
 		echo "STATE: Legacy (non-Alembic) database detected."; \
 		echo "ACTION: Stamping at 'base' and migrating to 'head' to bring it under Alembic control..."; \
 		docker compose exec -T transcription-collector alembic -c /app/alembic.ini stamp base; \
@@ -352,7 +352,7 @@ migrate: check_docker
 	@# Preflight: if currently at dc59a1c03d1f and users.data already exists, stamp next revision
 	@current_version=$$(docker compose exec -T transcription-collector alembic -c /app/alembic.ini current 2>/dev/null | grep -E '^[a-f0-9]{12}' | head -1 || echo ""); \
 	if [ "$$current_version" = "dc59a1c03d1f" ]; then \
-		if docker compose exec -T postgres psql -U postgres -d vexa -t -c "SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'data';" | grep -q 1; then \
+		if docker compose exec -T postgres psql -U postgres -d vomeet -t -c "SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'data';" | grep -q 1; then \
 			echo "---> Preflight: detected existing column users.data. Stamping 5befe308fa8b..."; \
 			docker compose exec -T transcription-collector alembic -c /app/alembic.ini stamp 5befe308fa8b; \
 		fi; \

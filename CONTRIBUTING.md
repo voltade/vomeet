@@ -1,7 +1,7 @@
 Contributor License Agreement (CLA)
 
 To ensure that all contributions are legally clean and consistent with the Apache License 2.0
-, Vexa requires every contributor (individuals and corporations) to sign a Contributor License Agreement (CLA) before their first contribution is merged.
+, Vomeet requires every contributor (individuals and corporations) to sign a Contributor License Agreement (CLA) before their first contribution is merged.
 
 Individuals: please review and sign the [Individual CLA](CLA/Individual_CLA.md)
 .
@@ -19,6 +19,6 @@ Submit the signed CLA by one of the following methods:
 
 Attach it to a GitHub issue or pull request (preferred), or
 
-Email it to: info@vexa.ai
+Email it to: team@voltade.com
 
 Once your CLA is on file, all future contributions from you (or your authorized employees, in the case of a corporation) will be automatically covered.

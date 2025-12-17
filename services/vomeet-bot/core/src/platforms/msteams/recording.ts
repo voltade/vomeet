@@ -57,12 +57,12 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
       const selectorsTyped = selectors as any;
 
       // Use browser utility classes from the global bundle
-      const { BrowserAudioService, BrowserWhisperLiveService } = (window as any).VexaBrowserUtils;
+      const { BrowserAudioService, BrowserWhisperLiveService } = (window as any).VomeetBrowserUtils;
 
       // --- Early reconfigure wiring (event listener only) ---
-      (window as any).__vexaPendingReconfigure = null;
+      (window as any).__vomeetPendingReconfigure = null;
       try {
-        document.addEventListener('vexa:reconfigure', (ev: Event) => {
+        document.addEventListener('vomeet:reconfigure', (ev: Event) => {
           try {
             const detail = (ev as CustomEvent).detail || {};
             const { lang, task } = detail;
@@ -86,23 +86,23 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
       }, true); // Enable stubborn mode for Teams
 
       // Expose references for reconfiguration
-      (window as any).__vexaWhisperLiveService = whisperLiveService;
-      (window as any).__vexaBotConfig = botConfigData;
+      (window as any).__vomeetWhisperLiveService = whisperLiveService;
+      (window as any).__vomeetBotConfig = botConfigData;
 
       // Replace with real reconfigure implementation and apply any queued update
       (window as any).triggerWebSocketReconfigure = async (lang: string | null, task: string | null) => {
         try {
-          const svc = (window as any).__vexaWhisperLiveService;
-          const cfg = (window as any).__vexaBotConfig || {};
+          const svc = (window as any).__vomeetWhisperLiveService;
+          const cfg = (window as any).__vomeetBotConfig || {};
           if (!svc) {
             // Service not ready yet, queue the update
-            (window as any).__vexaPendingReconfigure = { lang, task };
+            (window as any).__vomeetPendingReconfigure = { lang, task };
             (window as any).logBot?.('[Reconfigure] WhisperLive service not ready; queued for later.');
             return;
           }
           cfg.language = lang;
           cfg.task = task || 'transcribe';
-          (window as any).__vexaBotConfig = cfg;
+          (window as any).__vomeetBotConfig = cfg;
           
           // Update the service's config and force reconnect via socket close (stubborn will handle reconnection)
           svc.botConfigData = cfg;
@@ -119,10 +119,10 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
         }
       };
       try {
-        const pending = (window as any).__vexaPendingReconfigure;
+        const pending = (window as any).__vomeetPendingReconfigure;
         if (pending && typeof (window as any).triggerWebSocketReconfigure === 'function') {
           (window as any).triggerWebSocketReconfigure(pending.lang, pending.task);
-          (window as any).__vexaPendingReconfigure = null;
+          (window as any).__vomeetPendingReconfigure = null;
         }
       } catch {}
 
@@ -200,12 +200,12 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
             };
 
             // Save callbacks globally for reuse
-            (window as any).__vexaOnMessage = onMessage;
-            (window as any).__vexaOnError = onError;
-            (window as any).__vexaOnClose = onClose;
+            (window as any).__vomeetOnMessage = onMessage;
+            (window as any).__vomeetOnError = onError;
+            (window as any).__vomeetOnClose = onClose;
 
             return await whisperLiveService.connectToWhisperLive(
-              (window as any).__vexaBotConfig,
+              (window as any).__vomeetBotConfig,
               onMessage,
               onError,
               onClose
@@ -254,10 +254,10 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
                 
                 if (!id) {
                   // Generate a stable ID if none found
-                  if (!(element as any).dataset.vexaGeneratedId) {
-                    (element as any).dataset.vexaGeneratedId = 'teams-id-' + Math.random().toString(36).substr(2, 9);
+                  if (!(element as any).dataset.vomeetGeneratedId) {
+                    (element as any).dataset.vomeetGeneratedId = 'teams-id-' + Math.random().toString(36).substr(2, 9);
                   }
-                  id = (element as any).dataset.vexaGeneratedId;
+                  id = (element as any).dataset.vomeetGeneratedId;
                 }
                 
                 return id;
@@ -423,8 +423,8 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
                   subtree: true 
                 });
                 
-                if (!(participantElement as any).dataset.vexaObserverAttached) {
-                  (participantElement as any).dataset.vexaObserverAttached = 'true';
+                if (!(participantElement as any).dataset.vomeetObserverAttached) {
+                  (participantElement as any).dataset.vomeetObserverAttached = 'true';
                 }
               }
               
@@ -433,7 +433,7 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
                   const participantElements = document.querySelectorAll(selector);
                   for (let i = 0; i < participantElements.length; i++) {
                     const el = participantElements[i] as HTMLElement;
-                    if (!(el as any).dataset.vexaObserverAttached) {
+                    if (!(el as any).dataset.vomeetObserverAttached) {
                       observeTeamsParticipant(el);
                     }
                   }
@@ -666,7 +666,7 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
                         
                         // Check if the added node matches any participant selector
                         for (const selector of participantSelectors) {
-                          if (elementNode.matches(selector) && !(elementNode as any).dataset.vexaObserverAttached) {
+                          if (elementNode.matches(selector) && !(elementNode as any).dataset.vomeetObserverAttached) {
                             observeTeamsParticipant(elementNode);
                           }
                           
@@ -674,7 +674,7 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
                           const childElements = elementNode.querySelectorAll(selector);
                           for (let i = 0; i < childElements.length; i++) {
                             const childEl = childElements[i] as HTMLElement;
-                            if (!(childEl as any).dataset.vexaObserverAttached) {
+                            if (!(childEl as any).dataset.vomeetObserverAttached) {
                               observeTeamsParticipant(childEl);
                             }
                           }
@@ -699,8 +699,8 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
                             
                             speakingStates.delete(participantId);
                             
-                            delete (elementNode as any).dataset.vexaObserverAttached;
-                            delete (elementNode as any).dataset.vexaGeneratedId;
+                            delete (elementNode as any).dataset.vomeetObserverAttached;
+                            delete (elementNode as any).dataset.vomeetGeneratedId;
                             (window as any).logBot(`🗑️ [Teams] Removed observer for: ${participantName} (ID: ${participantId})`);
                           }
                         }
@@ -935,10 +935,10 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
       });
 
       try {
-        const pending = (window as any).__vexaPendingReconfigure;
+        const pending = (window as any).__vomeetPendingReconfigure;
         if (pending && typeof (window as any).triggerWebSocketReconfigure === 'function') {
           (window as any).triggerWebSocketReconfigure(pending.lang, pending.task);
-          (window as any).__vexaPendingReconfigure = null;
+          (window as any).__vomeetPendingReconfigure = null;
         }
       } catch {}
     },

@@ -38,8 +38,8 @@ from sqlalchemy import select as sa_select
 
 # Assuming these are still needed from config or env
 DOCKER_HOST = os.environ.get("DOCKER_HOST", "unix://var/run/docker.sock")
-DOCKER_NETWORK = os.environ.get("DOCKER_NETWORK", "vexa_default")
-BOT_IMAGE_NAME = os.environ.get("BOT_IMAGE_NAME", "vexa-bot:dev")
+DOCKER_NETWORK = os.environ.get("DOCKER_NETWORK", "vomeet_default")
+BOT_IMAGE_NAME = os.environ.get("BOT_IMAGE_NAME", "vomeet-bot:dev")
 
 # For example, use 'cuda' for NVIDIA GPUs or 'cpu' for CPU
 DEVICE_TYPE = os.environ.get("DEVICE_TYPE", "cuda").lower()
@@ -151,7 +151,7 @@ async def start_bot_container(
     task: Optional[str]
 ) -> Optional[tuple[str, str]]:
     """
-    Starts a vexa-bot container via requests_unixsocket AFTER checking user limit.
+    Starts a vomeet-bot container via requests_unixsocket AFTER checking user limit.
 
     Args:
         user_id: The ID of the user requesting the bot.
@@ -175,9 +175,9 @@ async def start_bot_container(
         logger.error("Cannot start bot container, requests_unixsocket session not available.")
         return None, None
 
-    container_name = f"vexa-bot-{meeting_id}-{uuid.uuid4().hex[:8]}"
+    container_name = f"vomeet-bot-{meeting_id}-{uuid.uuid4().hex[:8]}"
     if not bot_name:
-        bot_name = f"VexaBot-{uuid.uuid4().hex[:6]}"
+        bot_name = f"VomeetBot-{uuid.uuid4().hex[:6]}"
     connection_id = str(uuid.uuid4())
     logger.info(f"Generated unique connectionId for bot session: {connection_id}")
 
@@ -232,7 +232,7 @@ async def start_bot_container(
 
     logger.info(f"Passing WHISPER_LIVE_URL to bot: {whisper_live_url_for_bot}")
 
-    # These are the environment variables passed to the Node.js process  of the vexa-bot started by your entrypoint.sh.
+    # These are the environment variables passed to the Node.js process  of the vomeet-bot started by your entrypoint.sh.
     environment = [
         f"BOT_CONFIG={bot_config_json}",
         f"WHISPER_LIVE_URL={whisper_live_url_for_bot}", # Use the URL from bot-manager's env
@@ -249,7 +249,7 @@ async def start_bot_container(
     create_payload = {
         "Image": BOT_IMAGE_NAME,
         "Env": environment,
-        "Labels": {"vexa.user_id": str(user_id)}, # *** ADDED Label ***
+        "Labels": {"vomeet.user_id": str(user_id)}, # *** ADDED Label ***
         "HostConfig": {
             "NetworkMode": DOCKER_NETWORK,
             "AutoRemove": True,
@@ -367,7 +367,7 @@ async def get_running_bots_status(user_id: int) -> List[Dict[str, Any]]:
     try:
         # Construct filters for Docker API
         filters = json.dumps({
-            "label": [f"vexa.user_id={user_id}"],
+            "label": [f"vomeet.user_id={user_id}"],
             "status": ["running"]
         })
         
@@ -406,11 +406,11 @@ async def get_running_bots_status(user_id: int) -> List[Dict[str, Any]]:
             status = container_info.get('Status')
             labels = container_info.get('Labels', {})
             
-            # Parse meeting_id from name: vexa-bot-{meeting_id}-{uuid}
+            # Parse meeting_id from name: vomeet-bot-{meeting_id}-{uuid}
             meeting_id_from_name = "unknown"
             try:
                  parts = name.split('-')
-                 if len(parts) > 2 and parts[0] == 'vexa' and parts[1] == 'bot':
+                 if len(parts) > 2 and parts[0] == 'vomeet' and parts[1] == 'bot':
                       meeting_id_from_name = parts[2]
                       # Try converting to int for DB lookup
                       meeting_id_int = int(meeting_id_from_name)

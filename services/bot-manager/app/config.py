@@ -5,8 +5,8 @@ if not REDIS_URL:
     raise ValueError("Missing required environment variable: REDIS_URL")
 
 # Bot configuration
-BOT_IMAGE_NAME = os.environ.get("BOT_IMAGE_NAME", "vexa-bot:latest")
-DOCKER_NETWORK = os.environ.get("DOCKER_NETWORK", "vexa_default")
+BOT_IMAGE_NAME = os.environ.get("BOT_IMAGE_NAME", "vomeet-bot:latest")
+DOCKER_NETWORK = os.environ.get("DOCKER_NETWORK", "vomeet_default")
 
 # Lock settings
 LOCK_TIMEOUT_SECONDS = 300 # 5 minutes

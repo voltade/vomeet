@@ -3,7 +3,7 @@ title: Bot Reconfiguration Identity Mismatch (Fix: Meeting-ID-Based Addressing)
 type: Architecture Decision
 status: Approved
 priority: High
-components: [bot-manager, vexa-bot, WhisperLive]
+components: [bot-manager, vomeet-bot, WhisperLive]
 created: 2025-10-11
 related: [meeting-token-and-meeting-id-auth.md]
 owners: [dgrankin]
@@ -177,7 +177,7 @@ Client Request → Bot-manager has meeting.id → Publish directly (no lookup!)
 
 ## Implementation Changes
 
-### 1. Bot Subscription (`vexa-bot/core/src/index.ts`)
+### 1. Bot Subscription (`vomeet-bot/core/src/index.ts`)
 
 **Current:**
 ```typescript
@@ -258,7 +258,7 @@ except Exception as e:
     )
 ```
 
-### 3. Bot Message Validation (`vexa-bot/core/src/index.ts`)
+### 3. Bot Message Validation (`vomeet-bot/core/src/index.ts`)
 
 **Add validation:**
 ```typescript
@@ -435,7 +435,7 @@ After:  "Could not find meeting 12345"
 - [x] Bot already has access to `botConfig.meeting_id`
 
 ### Phase 2: Update Bot Subscription
-- [ ] Modify `vexa-bot/core/src/index.ts` to subscribe to `bot_commands:meeting:{meeting_id}`
+- [ ] Modify `vomeet-bot/core/src/index.ts` to subscribe to `bot_commands:meeting:{meeting_id}`
 - [ ] Add validation in `handleRedisMessage` to check `command.meeting_id`
 - [ ] Add error handling if `meeting_id` not provided in config
 
@@ -511,7 +511,7 @@ After:  "Could not find meeting 12345"
 ## Risk Assessment
 
 ### Low Risk ✅
-- Changes are isolated to bot-manager and vexa-bot
+- Changes are isolated to bot-manager and vomeet-bot
 - No database schema changes required
 - No changes to WhisperLive or transcription-collector
 - Can be tested thoroughly in staging
@@ -550,14 +550,14 @@ After:  "Could not find meeting 12345"
 ## References
 
 **Code Locations:**
-- Bot subscription: `vexa/services/vexa-bot/core/src/index.ts:342-367`
-- Bot message handler: `vexa/services/vexa-bot/core/src/index.ts:131-203`
-- Bot-manager reconfigure: `vexa/services/bot-manager/app/main.py:572-682`
-- Bot-manager stop: `vexa/services/bot-manager/app/main.py:684-828`
-- WebSocket reconnection: `vexa/services/vexa-bot/core/src/utils/browser.ts:316-345`
-- BotConfig type: `vexa/services/vexa-bot/core/src/types.ts:1-20`
+- Bot subscription: `vomeet/services/vomeet-bot/core/src/index.ts:342-367`
+- Bot message handler: `vomeet/services/vomeet-bot/core/src/index.ts:131-203`
+- Bot-manager reconfigure: `vomeet/services/bot-manager/app/main.py:572-682`
+- Bot-manager stop: `vomeet/services/bot-manager/app/main.py:684-828`
+- WebSocket reconnection: `vomeet/services/vomeet-bot/core/src/utils/browser.ts:316-345`
+- BotConfig type: `vomeet/services/vomeet-bot/core/src/types.ts:1-20`
 
 **Related Documentation:**
-- vexa/services/vexa-bot/README.md - Bot architecture overview
-- vexa/services/bot-manager/README.md - Bot-manager API documentation
+- vomeet/services/vomeet-bot/README.md - Bot architecture overview
+- vomeet/services/bot-manager/README.md - Bot-manager API documentation
 

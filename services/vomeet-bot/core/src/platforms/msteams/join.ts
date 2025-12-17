@@ -18,12 +18,12 @@ export async function joinMicrosoftTeams(page: Page, botConfig: BotConfig): Prom
   await page.addInitScript(() => {
     try {
       const win = window as any;
-      if (win.__vexaRemoteAudioHookInstalled || typeof RTCPeerConnection !== 'function') {
+      if (win.__vomeetRemoteAudioHookInstalled || typeof RTCPeerConnection !== 'function') {
         return;
       }
 
-      win.__vexaRemoteAudioHookInstalled = true;
-      win.__vexaInjectedAudioElements = win.__vexaInjectedAudioElements || [];
+      win.__vomeetRemoteAudioHookInstalled = true;
+      win.__vomeetInjectedAudioElements = win.__vomeetInjectedAudioElements || [];
       const OriginalPC = RTCPeerConnection;
 
       function wrapPeerConnection(this: any, ...args: any[]) {
@@ -41,7 +41,7 @@ export async function joinMicrosoftTeams(page: Page, botConfig: BotConfig): Prom
             audioEl.autoplay = true;
             audioEl.muted = false;
             audioEl.volume = 1.0;
-            audioEl.dataset.vexaInjected = 'true';
+            audioEl.dataset.vomeetInjected = 'true';
             audioEl.style.position = 'absolute';
             audioEl.style.left = '-9999px';
             audioEl.style.width = '1px';
@@ -55,13 +55,13 @@ export async function joinMicrosoftTeams(page: Page, botConfig: BotConfig): Prom
               document.addEventListener('DOMContentLoaded', () => document.body?.appendChild(audioEl), { once: true });
             }
 
-            (win.__vexaInjectedAudioElements as HTMLAudioElement[]).push(audioEl);
-            win.__vexaCapturedRemoteAudioStreams = win.__vexaCapturedRemoteAudioStreams || [];
-            win.__vexaCapturedRemoteAudioStreams.push(stream);
+            (win.__vomeetInjectedAudioElements as HTMLAudioElement[]).push(audioEl);
+            win.__vomeetCapturedRemoteAudioStreams = win.__vomeetCapturedRemoteAudioStreams || [];
+            win.__vomeetCapturedRemoteAudioStreams.push(stream);
 
             win.logBot?.(`[Audio Hook] Injected remote audio element (track=${event.track.id}, readyState=${event.track.readyState}).`);
           } catch (hookError) {
-            console.error('Vexa audio hook error:', hookError);
+            console.error('Vomeet audio hook error:', hookError);
           }
         };
 
@@ -95,7 +95,7 @@ export async function joinMicrosoftTeams(page: Page, botConfig: BotConfig): Prom
 
       win.logBot?.('[Audio Hook] RTCPeerConnection patched to mirror remote audio tracks.');
     } catch (initError) {
-      console.error('Failed to install Vexa audio hook:', initError);
+      console.error('Failed to install Vomeet audio hook:', initError);
     }
   });
 
@@ -200,7 +200,7 @@ export async function joinMicrosoftTeams(page: Page, botConfig: BotConfig): Prom
         try {
           el.muted = false;
           el.autoplay = true;
-          el.dataset.vexaTouched = 'true';
+          el.dataset.vomeetTouched = 'true';
           if (typeof el.play === 'function') {
             el.play().catch(() => {});
           }

@@ -5,7 +5,7 @@ Use this guide to reproduce Whisper hallucinations, collect examples in your tar
 ### Prerequisites
 
 - Local stack running (see `DEPLOYMENT.md`), or dev stack via `make all`
-- Jupyter kernel for `vexa/tests.ipynb`
+- Jupyter kernel for `vomeet/tests.ipynb`
 
 ### Steps (using `tests.ipynb`)
 

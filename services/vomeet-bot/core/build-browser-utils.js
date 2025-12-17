@@ -14,7 +14,7 @@ const browserUtilsContent = fs.readFileSync(browserUtilsPath, 'utf8');
 
 // Create the browser bundle content using a safe CommonJS wrapper
 const browserBundleContent = `
-// Browser utilities bundle for Vexa Bot
+// Browser utilities bundle for Vomeet Bot
 // This file is injected into browser context via page.addScriptTag()
 (function() {
   'use strict';
@@ -29,7 +29,7 @@ ${browserUtilsContent}
 
   // Expose utilities on window object for browser context
   var utils = module.exports || {};
-  window.VexaBrowserUtils = {
+  window.VomeetBrowserUtils = {
     BrowserAudioService: utils.BrowserAudioService,
     BrowserWhisperLiveService: utils.BrowserWhisperLiveService,
     generateBrowserUUID: utils.generateBrowserUUID
@@ -41,7 +41,7 @@ ${browserUtilsContent}
   };
 
   try {
-    console.log('Vexa Browser Utils loaded successfully:', Object.keys(window.VexaBrowserUtils || {}));
+    console.log('Vomeet Browser Utils loaded successfully:', Object.keys(window.VomeetBrowserUtils || {}));
   } catch (e) {}
 })();
 `;
@@ -61,5 +61,5 @@ console.log('📦 Bundle includes:');
 console.log('  - BrowserAudioService');
 console.log('  - BrowserWhisperLiveService');
 console.log('  - generateBrowserUUID');
-console.log('  - window.VexaBrowserUtils');
+console.log('  - window.VomeetBrowserUtils');
 console.log('  - window.performLeaveAction');

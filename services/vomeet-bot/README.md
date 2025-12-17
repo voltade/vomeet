@@ -1,4 +1,4 @@
-## Vexa Bot — Platform‑agnostic Meeting Bot
+## Vomeet Bot — Platform‑agnostic Meeting Bot
 
 This document describes the system design and implementation of the platform‑agnostic meeting bot used to join and transcribe calls across providers (Microsoft Teams, Google Meet, etc.). It reflects the current architecture after the refactor to unify orchestration and reduce duplication.
 
@@ -126,7 +126,7 @@ await runMeetingFlow("google_meet", botConfig, page, gracefulLeave, {
 Hot Dev Kit (local Makefile):
 
 ```bash
-cd vexa/services/vexa-bot
+cd vomeet/services/vomeet-bot
 
 # Setup (once) - builds image + creates dist/ for hot-reload
 make build
@@ -151,13 +151,13 @@ Why hot-reload is faster:
 
 Notes:
 - Screenshots saved to `debug/screenshots/run-<timestamp>` (repo-relative)
-- Single hot-bot identity: channel `bot_commands:hot-debug`, container `vexa-bot-hot`
+- Single hot-bot identity: channel `bot_commands:hot-debug`, container `vomeet-bot-hot`
 - No local `node_modules` needed (uses Docker)
 
 Build only:
 
 ```bash
-cd vexa/services/vexa-bot/core
+cd vomeet/services/vomeet-bot/core
 npm run build
 ```
 
@@ -175,7 +175,7 @@ npm run build
 - All exits are reasoned and graceful; removal is handled deterministically
 - Strong logging and reconnection for reliable operations
 
-# Vexa Bot 
+# Vomeet Bot 
 
 ## Meet Bot CLI Tool  (Development, Testing)
 
@@ -225,14 +225,14 @@ npm run cli configs/meet-bot.json
 
 Before running the bot, you need to build the Docker image. Navigate to the `core` directory  (where the Dockerfile is located) and run:
 ```bash
-docker build -t vexa-bot .
+docker build -t vomeet-bot .
 ```
-This command will create a Docker image named vexa-bot.
+This command will create a Docker image named vomeet-bot.
 #### 2. Run the Bot Container
 
 Once the image is built, you can start the bot using Docker. Pass the bot configuration as an environment variable:
 ```bash
-docker run -e BOT_CONFIG='{"platform": "google_meet", "meetingUrl": "https://meet.google.com/xcb-tssj-qjc", "botName": "Vexa", "token": "123", "connectionId": "", "automaticLeave": {"waitingRoomTimeout": 300000, "noOneJoinedTimeout": 300000, "everyoneLeftTimeout": 300000}}' vexa-bot
+docker run -e BOT_CONFIG='{"platform": "google_meet", "meetingUrl": "https://meet.google.com/xcb-tssj-qjc", "botName": "Vomeet", "token": "123", "connectionId": "", "automaticLeave": {"waitingRoomTimeout": 300000, "noOneJoinedTimeout": 300000, "everyoneLeftTimeout": 300000}}' vomeet-bot
 ```
 ##### Notes:
 

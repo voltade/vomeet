@@ -50,14 +50,14 @@ else
 fi
 
 echo "[5/6] Cloning or updating repository..."
-if [ -d "/root/vexa" ]; then
-  cd /root/vexa && git pull
+if [ -d "/root/vomeet" ]; then
+  cd /root/vomeet && git pull
 else
-  git clone https://github.com/Vexa-ai/vexa.git /root/vexa
+  git clone https://github.com/voltade/vomeet.git /root/vomeet
 fi
 
 echo "[6/6] Done. Next steps:"
-echo "  cd /root/vexa"
+echo "  cd /root/vomeet"
 if [ "$MODE" = "gpu" ]; then
   echo "  make all TARGET=gpu"
 else

@@ -1,4 +1,4 @@
-name: vexa_dev
+name: vomeet_dev
 services:
   api-gateway:
     build:
@@ -21,7 +21,7 @@ services:
       transcription-collector:
         condition: service_started
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
 
   admin-api:
@@ -33,7 +33,7 @@ services:
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=vexa
+      - DB_NAME=vomeet
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - ADMIN_API_TOKEN=${ADMIN_API_TOKEN}
@@ -43,7 +43,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
 
   bot-manager:
@@ -52,12 +52,12 @@ services:
       dockerfile: services/bot-manager/Dockerfile
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - BOT_IMAGE_NAME=${BOT_IMAGE_NAME:-vexa-bot:dev}
-      - DOCKER_NETWORK=${COMPOSE_PROJECT_NAME:-vexa}_vexa_default
+      - BOT_IMAGE_NAME=${BOT_IMAGE_NAME:-vomeet-bot:dev}
+      - DOCKER_NETWORK=${COMPOSE_PROJECT_NAME:-vomeet}_vomeet_default
       - LOG_LEVEL=DEBUG
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=vexa
+      - DB_NAME=vomeet
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - DOCKER_HOST=unix://var/run/docker.sock
@@ -73,7 +73,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
 
   whisperlive:
@@ -124,14 +124,14 @@ services:
       transcription-collector:
         condition: service_started
     networks:
-      - vexa_default
+      - vomeet_default
   consul:
     image: hashicorp/consul:1.16
     command: agent -dev -client=0.0.0.0
     ports:
       - "8502:8500"
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
 
   traefik:
@@ -149,7 +149,7 @@ services:
       - "8082:8080"
       - "8081:8081"
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -192,7 +192,7 @@ services:
       transcription-collector:
         condition: service_started
     networks:
-      - vexa_default
+      - vomeet_default
     # Don't auto-start CPU version, users can manually start it
     restart: unless-stopped
     logging:
@@ -216,7 +216,7 @@ services:
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=vexa
+      - DB_NAME=vomeet
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - REDIS_HOST=redis
@@ -238,7 +238,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
 
   mcp:
@@ -255,7 +255,7 @@ services:
       api-gateway:
         condition: service_started
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
 
   redis:
@@ -265,24 +265,24 @@ services:
     volumes:
       - redis-data:/data
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
 
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_DB=vexa
+      - POSTGRES_DB=vomeet
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d vexa"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vomeet"]
       interval: 5s
       timeout: 5s
       retries: 5
     networks:
-      - vexa_default
+      - vomeet_default
     restart: unless-stopped
     ports:
       - "${POSTGRES_HOST_PORT:-5438}:5432"
@@ -292,5 +292,5 @@ volumes:
   postgres-data:
 
 networks:
-  vexa_default:
+  vomeet_default:
     driver: bridge

@@ -1,6 +1,6 @@
-# Self-Hosted Vexa Management Guide
+# Self-Hosted Vomeet Management Guide
 
-Essential user and token management for self-hosted Vexa deployments.
+Essential user and token management for self-hosted Vomeet deployments.
 
 ## Prerequisites
 
@@ -9,10 +9,10 @@ Essential user and token management for self-hosted Vexa deployments.
 
 **For Python examples**, install the client:
 ```bash
-pip install vexa-client
+pip install vomeet-client
 ```
 
-**Before starting**, ensure Vexa services are running - see the [Deployment Guide](deployment.md) for setup instructions.
+**Before starting**, ensure Vomeet services are running - see the [Deployment Guide](deployment.md) for setup instructions.
 
 Admin endpoints use `/admin/` prefix with `X-Admin-API-Key` header.
 
@@ -47,9 +47,9 @@ curl -X POST http://localhost:18056/admin/users \
 ### Using Python
 
 ```python
-from vexa_client import VexaClient
+from vomeet_client import VomeetClient
 
-admin_client = VexaClient(
+admin_client = VomeetClient(
     base_url="http://localhost:18056",
     admin_key="token"
 )
@@ -134,10 +134,10 @@ curl -X GET "http://localhost:18056/meetings" \
 ### Using Python
 
 ```python
-from vexa_client import VexaClient
+from vomeet_client import VomeetClient
 
 # Step 1: Create user
-admin_client = VexaClient(base_url="http://localhost:18056", admin_key="token")
+admin_client = VomeetClient(base_url="http://localhost:18056", admin_key="token")
 
 user = admin_client.create_user(
     email="newuser@example.com",
@@ -152,7 +152,7 @@ api_token = token_info['token']
 print(f"✓ Generated token: {api_token}")
 
 # Step 3: Test user access
-user_client = VexaClient(base_url="http://localhost:18056", api_key=api_token)
+user_client = VomeetClient(base_url="http://localhost:18056", api_key=api_token)
 meetings = user_client.get_meetings()
 print(f"✓ User API access working!")
 ```
@@ -278,8 +278,7 @@ curl -X DELETE http://localhost:18056/admin/tokens/1 \
 
 ## Getting Help
 
-- **Discord**: https://discord.gg/Ga9duGkVz9
-- **GitHub Issues**: https://github.com/Vexa-ai/vexa/issues
+- **GitHub Issues**: https://github.com/voltade/vomeet/issues
 
 ---
 

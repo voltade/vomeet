@@ -3,7 +3,7 @@ title: Replace user-token propagation and session UIDs with meeting-id + Meeting
 type: Architecture Decision
 status: Approved
 priority: High
-components: [bot-manager, vexa-bot, WhisperLive, transcription-collector]
+components: [bot-manager, vomeet-bot, WhisperLive, transcription-collector]
 created: 2025-10-11
 related: [bot-reconfiguration-identity-mismatch.md]
 owners: [dgrankin]
@@ -23,12 +23,12 @@ version: 1.0
 ### Executive Summary
 
 - **Problem**:
-  - **Raw user token propagation**: user API tokens flow across services (vexa-bot → WhisperLive → transcription-collector).
+  - **Raw user token propagation**: user API tokens flow across services (vomeet-bot → WhisperLive → transcription-collector).
   - **High DB load**: transcription-collector validates every message by hitting the database with provided tokens.
   - **Identity mismatch**: control-plane addresses bots via session UIDs while data-plane uses ephemeral WS UIDs. See `bot-reconfiguration-identity-mismatch.md`.
 - **Decision**:
   - Use stable **meeting_id** (DB PK) as the single identity for control/data planes.
-  - Replace user-token propagation with a **MeetingToken** (JWT HS256) signed by a single shared secret (`ADMIN_TOKEN` from `vexa/.env`).
+  - Replace user-token propagation with a **MeetingToken** (JWT HS256) signed by a single shared secret (`ADMIN_TOKEN` from `vomeet/.env`).
   - Verify MeetingToken cryptographically at transcription-collector; eliminate per-message DB lookups.
 
 ---
@@ -99,7 +99,7 @@ Example claims:
   - Launch bot with `meeting_id`, `MeetingToken`, and metadata (platform, native_meeting_id, language, task).
 
 - **Transport**
-  - vexa-bot → WhisperLive (initial WS config): send `meeting_id` + `meeting_token`.
+  - vomeet-bot → WhisperLive (initial WS config): send `meeting_id` + `meeting_token`.
   - WhisperLive treats token as opaque; forwards to Redis:
     - session_start: include token (required to seed validation/cache).
     - transcription/speaker events: either include token each message (stateless) or send only `meeting_id` with per-message MAC derived from the token (stateful option, see below).
@@ -132,7 +132,7 @@ Example claims:
 - **Redis injection resistance**:
   - Stateless mode: signature verification per message (includes claims).
   - Stateful mode: derive a per-meeting key (e.g., HKDF(MeetingToken)) and attach `mac = HMAC(derived_key, message_payload)` for each message.
-- **Key management**: single shared secret `ADMIN_TOKEN` in `vexa/.env` available to bot-manager and transcription-collector only.
+- **Key management**: single shared secret `ADMIN_TOKEN` in `vomeet/.env` available to bot-manager and transcription-collector only.
 
 ---
 
@@ -144,7 +144,7 @@ Example claims:
   - Publish commands ONLY to `bot_commands:meeting:{meeting_id}`.
   - Remove `(platform,native_meeting_id) → current_uid` Redis mapping.
 
-- **vexa-bot**
+- **vomeet-bot**
   - Send `meeting_id` + `meeting_token` in WhisperLive initial config.
   - Subscribe to `bot_commands:meeting:{meeting_id}`.
   - Validate `meeting_id` in command payloads before acting.
@@ -182,6 +182,6 @@ Example claims:
 
 ### Notes
 
-- We intentionally use HS256 with `ADMIN_TOKEN` (single shared secret already present in `vexa/.env`) to avoid introducing a new key pair. If future isolation is needed, we can migrate to RS256 with JWKS and per-service public keys.
+- We intentionally use HS256 with `ADMIN_TOKEN` (single shared secret already present in `vomeet/.env`) to avoid introducing a new key pair. If future isolation is needed, we can migrate to RS256 with JWKS and per-service public keys.
 
 

@@ -27,8 +27,8 @@ if not NOMAD_AGENT_IP:
     )
 NOMAD_ADDR = os.getenv("NOMAD_ADDR", f"http://{NOMAD_AGENT_IP}:4646").rstrip("/")
 
-# Name of the *parameterised* job that represents a vexa-bot instance
-BOT_JOB_NAME = os.getenv("VEXA_BOT_JOB_NAME", "vexa-bot")
+# Name of the *parameterised* job that represents a vomeet-bot instance
+BOT_JOB_NAME = os.getenv("VOMEET_BOT_JOB_NAME", "vomeet-bot")
 
 # ---------------------------------------------------------------------------
 # Helper / compatibility no-ops ------------------------------------------------
@@ -57,7 +57,7 @@ async def start_bot_container(
     language: Optional[str],
     task: Optional[str]
 ) -> Optional[Tuple[str, str]]:
-    """Dispatch a parameterised *vexa-bot* Nomad job.
+    """Dispatch a parameterised *vomeet-bot* Nomad job.
 
     Returns (dispatched_job_id, connection_id) on success.
     """
@@ -184,13 +184,13 @@ def stop_bot_container(container_id: str) -> bool:
 async def get_running_bots_status(user_id: int) -> List[Dict[str, Any]]:
     """Return a list of running bots for the given user by querying Nomad API.
     
-    Queries the Nomad API to find all running vexa-bot jobs and filters them
+    Queries the Nomad API to find all running vomeet-bot jobs and filters them
     by the user_id in the job metadata.
     """
     logger.info(f"Querying Nomad for running bots for user {user_id}")
     
     try:
-        # Query Nomad for all running vexa-bot jobs
+        # Query Nomad for all running vomeet-bot jobs
         url = f"{NOMAD_ADDR}/v1/jobs"
         params = {"prefix": BOT_JOB_NAME}
         
@@ -202,7 +202,7 @@ async def get_running_bots_status(user_id: int) -> List[Dict[str, Any]]:
             running_bots = []
             
             for job in jobs_data:
-                # Only process vexa-bot jobs
+                # Only process vomeet-bot jobs
                 if not job.get("ID", "").startswith(BOT_JOB_NAME):
                     continue
                     

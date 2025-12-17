@@ -1,6 +1,6 @@
-# Vexa API Usage Guide
+# Vomeet API Usage Guide
 
-This document outlines how to interact with the Vexa API to manage meeting bots and retrieve transcripts during our free public beta phase.
+This document outlines how to interact with the Vomeet API to manage meeting bots and retrieve transcripts during our free public beta phase.
 
 ## Authentication
 
@@ -8,14 +8,14 @@ All API requests described here require an API key for authentication.
 
 ### For Self-Hosted Deployments
 
-If you're running Vexa on your own infrastructure, you need to create a user and generate an API token first:
+If you're running Vomeet on your own infrastructure, you need to create a user and generate an API token first:
 
 1. **Create a user and token** - See the [Self-Hosted Management Guide](self-hosted-management.md) for detailed instructions
 2. **Use the generated token** as your `X-API-Key` in all API requests
 
-### For Hosted Service (vexa.ai)
+### For Hosted Service (vomeet.ai)
 
-* **Obtain your API Key:** Get your unique API key from [vexa.ai/dashboard/api-keys](https://vexa.ai/dashboard/api-keys)
+* **Obtain your API Key:** Get your unique API key from [vomeet.ai/dashboard/api-keys](https://vomeet.ai/dashboard/api-keys)
 
 ### Using Your API Key
 
@@ -29,7 +29,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
 ### Request a Bot for a Meeting
 
 * **Endpoint:** `POST /bots`
-* **Description:** Asks the Vexa platform to add a transcription bot to a meeting.
+* **Description:** Asks the Vomeet platform to add a transcription bot to a meeting.
 * **Headers:**
   * `Content-Type: application/json`
   * `X-API-Key: YOUR_API_KEY_HERE`
@@ -50,7 +50,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   import requests
   import json
 
-  BASE_URL = "https://api.cloud.vexa.ai"
+  BASE_URL = "https://api.cloud.vomeet.ai"
   API_KEY = "YOUR_API_KEY_HERE" # Replace with your actual API key
 
   HEADERS = {
@@ -94,7 +94,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
 * **cURL Example (Google Meet):**
   ```bash
   curl -X POST \
-    https://api.cloud.vexa.ai/bots \
+    https://api.cloud.vomeet.ai/bots \
     -H 'Content-Type: application/json' \
     -H 'X-API-Key: YOUR_API_KEY_HERE' \
     -d '{
@@ -109,7 +109,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   # From URL: https://teams.live.com/meet/9387167464734?p=qxJanYOcdjN4d6UlGa
   # Extract meeting ID and passcode separately
   curl -X POST \
-    https://api.cloud.vexa.ai/bots \
+    https://api.cloud.vomeet.ai/bots \
     -H 'Content-Type: application/json' \
     -H 'X-API-Key: YOUR_API_KEY_HERE' \
     -d '{
@@ -146,12 +146,12 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   ```bash
   # Google Meet
   curl -X GET \
-    https://api.cloud.vexa.ai/transcripts/google_meet/abc-defg-hij \
+    https://api.cloud.vomeet.ai/transcripts/google_meet/abc-defg-hij \
     -H 'X-API-Key: YOUR_API_KEY_HERE'
 
   # Microsoft Teams (use the numeric meeting ID, not the full URL)
   curl -X GET \
-    https://api.cloud.vexa.ai/transcripts/teams/9387167464734 \
+    https://api.cloud.vomeet.ai/transcripts/teams/9387167464734 \
     -H 'X-API-Key: YOUR_API_KEY_HERE'
   ```
 
@@ -173,7 +173,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
 * **cURL Example:**
   ```bash
   curl -X GET \
-    https://api.cloud.vexa.ai/bots/status \
+    https://api.cloud.vomeet.ai/bots/status \
     -H 'X-API-Key: YOUR_API_KEY_HERE'
   ```
 
@@ -207,7 +207,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   ```bash
   # Google Meet
   curl -X PUT \
-    https://api.cloud.vexa.ai/bots/google_meet/abc-defg-hij/config \
+    https://api.cloud.vomeet.ai/bots/google_meet/abc-defg-hij/config \
     -H 'Content-Type: application/json' \
     -H 'X-API-Key: YOUR_API_KEY_HERE' \
     -d '{
@@ -216,7 +216,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
 
   # Microsoft Teams (use numeric meeting ID only)
   curl -X PUT \
-    https://api.cloud.vexa.ai/bots/teams/9387167464734/config \
+    https://api.cloud.vomeet.ai/bots/teams/9387167464734/config \
     -H 'Content-Type: application/json' \
     -H 'X-API-Key: YOUR_API_KEY_HERE' \
     -d '{
@@ -247,12 +247,12 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   ```bash
   # Google Meet
   curl -X DELETE \
-    https://api.cloud.vexa.ai/bots/google_meet/abc-defg-hij \
+    https://api.cloud.vomeet.ai/bots/google_meet/abc-defg-hij \
     -H 'X-API-Key: YOUR_API_KEY_HERE'
 
   # Microsoft Teams (use numeric meeting ID only)
   curl -X DELETE \
-    https://api.cloud.vexa.ai/bots/teams/9387167464734 \
+    https://api.cloud.vomeet.ai/bots/teams/9387167464734 \
     -H 'X-API-Key: YOUR_API_KEY_HERE'
   ```
 
@@ -268,7 +268,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   import requests
   import json
 
-  BASE_URL = "https://api.cloud.vexa.ai"
+  BASE_URL = "https://api.cloud.vomeet.ai"
   API_KEY = "YOUR_API_KEY_HERE" # Replace with your actual API key
 
   HEADERS = {
@@ -286,7 +286,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
 * **cURL Example:**
   ```bash
   curl -X GET \
-    https://api.cloud.vexa.ai/meetings \
+    https://api.cloud.vomeet.ai/meetings \
     -H 'X-API-Key: YOUR_API_KEY_HERE'
   ```
 
@@ -330,7 +330,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   ```bash
   # Google Meet
   curl -X PATCH \
-    https://api.cloud.vexa.ai/meetings/google_meet/abc-defg-hij \
+    https://api.cloud.vomeet.ai/meetings/google_meet/abc-defg-hij \
     -H 'Content-Type: application/json' \
     -H 'X-API-Key: YOUR_API_KEY_HERE' \
     -d '{
@@ -344,7 +344,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
 
   # Microsoft Teams (use numeric meeting ID only)
   curl -X PATCH \
-    https://api.cloud.vexa.ai/meetings/teams/9387167464734 \
+    https://api.cloud.vomeet.ai/meetings/teams/9387167464734 \
     -H 'Content-Type: application/json' \
     -H 'X-API-Key: YOUR_API_KEY_HERE' \
     -d '{
@@ -384,12 +384,12 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   ```bash
   # Google Meet
   curl -X DELETE \
-    https://api.cloud.vexa.ai/meetings/google_meet/abc-defg-hij \
+    https://api.cloud.vomeet.ai/meetings/google_meet/abc-defg-hij \
     -H 'X-API-Key: YOUR_API_KEY_HERE'
 
   # Microsoft Teams (use numeric meeting ID only)
   curl -X DELETE \
-    https://api.cloud.vexa.ai/meetings/teams/9387167464734 \
+    https://api.cloud.vomeet.ai/meetings/teams/9387167464734 \
     -H 'X-API-Key: YOUR_API_KEY_HERE'
   ```
 
@@ -401,7 +401,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
   * `Content-Type: application/json`
   * `X-API-Key: YOUR_API_KEY_HERE`
 * **Request Body:** A JSON object containing the webhook URL:
-  * `webhook_url`: (string, required) The full URL to which Vexa should send webhook notifications.
+  * `webhook_url`: (string, required) The full URL to which Vomeet should send webhook notifications.
 * **Response:** Returns the updated user record.
 * **Python Example:**
   ```python
@@ -418,7 +418,7 @@ If you're running Vexa on your own infrastructure, you need to create a user and
 * **cURL Example:**
   ```bash
   curl -X PUT \
-    https://api.cloud.vexa.ai/user/webhook \
+    https://api.cloud.vomeet.ai/user/webhook \
     -H 'Content-Type: application/json' \
     -H 'X-API-Key: YOUR_API_KEY_HERE' \
     -d '{
@@ -428,4 +428,4 @@ If you're running Vexa on your own infrastructure, you need to create a user and
 
 ## Need Help?
 
-Contact Vexa support via the designated channels if you encounter issues or have questions regarding API usage or API key provisioning.
+Contact Vomeet support via the designated channels if you encounter issues or have questions regarding API usage or API key provisioning.

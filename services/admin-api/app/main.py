@@ -30,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger("admin_api")
 
 # App initialization
-app = FastAPI(title="Vexa Admin API")
+app = FastAPI(title="Vomeet Admin API")
 
 # --- Pydantic Schemas for new endpoint ---
 class WebhookUpdate(BaseModel):
@@ -575,4 +575,4 @@ app.include_router(user_router)
 # Root endpoint (optional)
 @app.get("/")
 async def root():
-    return {"message": "Vexa Admin API"}
+    return {"message": "Vomeet Admin API"}

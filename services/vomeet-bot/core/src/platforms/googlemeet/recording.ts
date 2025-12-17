@@ -46,20 +46,20 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
       const { botConfigData, whisperUrlForBrowser, selectors } = pageArgs;
 
       // Use browser utility classes from the global bundle
-      const browserUtils = (window as any).VexaBrowserUtils;
+      const browserUtils = (window as any).VomeetBrowserUtils;
       (window as any).logBot(`Browser utils available: ${Object.keys(browserUtils || {}).join(', ')}`);
 
       // --- Early reconfigure wiring (stub + event) ---
       // Queue reconfig requests until service is ready
-      (window as any).__vexaPendingReconfigure = null;
+      (window as any).__vomeetPendingReconfigure = null;
       if (typeof (window as any).triggerWebSocketReconfigure !== 'function') {
         (window as any).triggerWebSocketReconfigure = async (lang: string | null, task: string | null) => {
-          (window as any).__vexaPendingReconfigure = { lang, task };
+          (window as any).__vomeetPendingReconfigure = { lang, task };
           (window as any).logBot?.('[Reconfigure] Stub queued update; will apply when service is ready.');
         };
       }
       try {
-        document.addEventListener('vexa:reconfigure', (ev: Event) => {
+        document.addEventListener('vomeet:reconfigure', (ev: Event) => {
           try {
             const detail = (ev as CustomEvent).detail || {};
             const { lang, task } = detail;
@@ -83,23 +83,23 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
       }, true); // Enable stubborn mode for Google Meet
 
       // Expose references for reconfiguration
-      (window as any).__vexaWhisperLiveService = whisperLiveService;
-      (window as any).__vexaBotConfig = botConfigData;
+      (window as any).__vomeetWhisperLiveService = whisperLiveService;
+      (window as any).__vomeetBotConfig = botConfigData;
 
       // Replace stub with real reconfigure implementation and apply any queued update
       (window as any).triggerWebSocketReconfigure = async (lang: string | null, task: string | null) => {
         try {
-          const svc = (window as any).__vexaWhisperLiveService;
-          const cfg = (window as any).__vexaBotConfig || {};
+          const svc = (window as any).__vomeetWhisperLiveService;
+          const cfg = (window as any).__vomeetBotConfig || {};
           cfg.language = lang;
           cfg.task = task || 'transcribe';
-          (window as any).__vexaBotConfig = cfg;
+          (window as any).__vomeetBotConfig = cfg;
           try { svc?.close(); } catch {}
           await svc?.connectToWhisperLive(
             cfg,
-            (window as any).__vexaOnMessage,
-            (window as any).__vexaOnError,
-            (window as any).__vexaOnClose
+            (window as any).__vomeetOnMessage,
+            (window as any).__vomeetOnError,
+            (window as any).__vomeetOnClose
           );
           (window as any).logBot?.(`[Reconfigure] Applied: language=${cfg.language}, task=${cfg.task}`);
         } catch (e: any) {
@@ -107,10 +107,10 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
         }
       };
       try {
-        const pending = (window as any).__vexaPendingReconfigure;
+        const pending = (window as any).__vomeetPendingReconfigure;
         if (pending && typeof (window as any).triggerWebSocketReconfigure === 'function') {
           (window as any).triggerWebSocketReconfigure(pending.lang, pending.task);
-          (window as any).__vexaPendingReconfigure = null;
+          (window as any).__vomeetPendingReconfigure = null;
         }
       } catch {}
 
@@ -190,8 +190,8 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
                     return;
                   }
                   if (data["language"]) {
-                    if (!(window as any).__vexaLangLogged) {
-                      (window as any).__vexaLangLogged = true;
+                    if (!(window as any).__vomeetLangLogged) {
+                      (window as any).__vomeetLangLogged = true;
                       logFn(`Google Meet Language detected: ${data["language"]}`);
                     }
                     // do not return; language can accompany segments
@@ -228,12 +228,12 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
                 };
 
                 // Save callbacks globally for reuse
-                (window as any).__vexaOnMessage = onMessage;
-                (window as any).__vexaOnError = onError;
-                (window as any).__vexaOnClose = onClose;
+                (window as any).__vomeetOnMessage = onMessage;
+                (window as any).__vomeetOnError = onError;
+                (window as any).__vomeetOnClose = onClose;
 
                 await whisperLiveService.connectToWhisperLive(
-                  (window as any).__vexaBotConfig,
+                  (window as any).__vomeetBotConfig,
                   onMessage,
                   onError,
                   onClose
@@ -262,10 +262,10 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
                   }
                 }
                 if (!id) {
-                  if (!(element as any).dataset.vexaGeneratedId) {
-                    (element as any).dataset.vexaGeneratedId = 'gm-id-' + Math.random().toString(36).substr(2, 9);
+                  if (!(element as any).dataset.vomeetGeneratedId) {
+                    (element as any).dataset.vomeetGeneratedId = 'gm-id-' + Math.random().toString(36).substr(2, 9);
                   }
-                  id = (element as any).dataset.vexaGeneratedId;
+                  id = (element as any).dataset.vomeetGeneratedId;
                 }
                 return id as string;
               }
@@ -403,8 +403,8 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
                   subtree: true
                 });
 
-                if (!(participantElement as any).dataset.vexaObserverAttached) {
-                  (participantElement as any).dataset.vexaObserverAttached = 'true';
+                if (!(participantElement as any).dataset.vomeetObserverAttached) {
+                  (participantElement as any).dataset.vomeetObserverAttached = 'true';
                 }
               }
 
@@ -413,7 +413,7 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
                 for (const sel of participantSelectors) {
                   document.querySelectorAll(sel).forEach((el) => {
                     const elh = el as HTMLElement;
-                    if (!(elh as any).dataset.vexaObserverAttached) {
+                    if (!(elh as any).dataset.vomeetObserverAttached) {
                       observeGoogleParticipant(elh);
                     }
                   });
@@ -603,21 +603,21 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
       // Define reconfiguration hook to update language/task and reconnect
       (window as any).triggerWebSocketReconfigure = async (lang: string | null, task: string | null) => {
         try {
-          const svc = (window as any).__vexaWhisperLiveService;
-          const cfg = (window as any).__vexaBotConfig || {};
+          const svc = (window as any).__vomeetWhisperLiveService;
+          const cfg = (window as any).__vomeetBotConfig || {};
           if (!svc) {
             (window as any).logBot?.('[Reconfigure] WhisperLive service not initialized.');
             return;
           }
           cfg.language = lang;
           cfg.task = task || 'transcribe';
-          (window as any).__vexaBotConfig = cfg;
+          (window as any).__vomeetBotConfig = cfg;
           try { svc.close(); } catch {}
           await svc.connectToWhisperLive(
             cfg,
-            (window as any).__vexaOnMessage,
-            (window as any).__vexaOnError,
-            (window as any).__vexaOnClose
+            (window as any).__vomeetOnMessage,
+            (window as any).__vomeetOnError,
+            (window as any).__vomeetOnClose
           );
           (window as any).logBot?.(`[Reconfigure] Applied: language=${cfg.language}, task=${cfg.task}`);
         } catch (e: any) {

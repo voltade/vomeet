@@ -1,5 +1,5 @@
 """
-Bot class for managing individual Vexa bots.
+Bot class for managing individual Vomeet bots.
 
 This class represents a single bot instance with methods for:
 - Creating bots (request_bot)
@@ -16,25 +16,25 @@ from typing import Optional, Dict, Any, List
 import sys
 import os
 # Use the fixed PyPI client
-sys.path.insert(0, '/Users/dmitriygrankin/dev/vexa-pypi-client')
-from vexa_client import VexaClient
-from vexa_client.vexa import parse_url
+sys.path.insert(0, '/Users/dmitriygrankin/dev/vomeet-pypi-client')
+from vomeet_client import VomeetClient
+from vomeet_client.vomeet import parse_url
 from core import get_transcript
 
 
 class Bot:
     """
-    Represents a single Vexa bot instance.
+    Represents a single Vomeet bot instance.
     
     Each bot is associated with a specific user client and meeting.
     """
     
-    def __init__(self, user_client: VexaClient, meeting_url: str, bot_id: Optional[str] = None):
+    def __init__(self, user_client: VomeetClient, meeting_url: str, bot_id: Optional[str] = None):
         """
         Initialize a Bot instance.
         
         Args:
-            user_client: VexaClient instance for the user
+            user_client: VomeetClient instance for the user
             meeting_url: Full meeting URL (e.g., "https://teams.live.com/meet/9398850880426?p=RBZCWdxyp85TpcKna8")
             bot_id: Optional unique identifier for this bot instance
         """
@@ -67,7 +67,7 @@ class Bot:
             return self.user_client.request_bot(
                 platform=self.platform,
                 native_meeting_id=self.native_meeting_id,
-                bot_name=bot_name or f"Vexa-{self.bot_id}",
+                bot_name=bot_name or f"Vomeet-{self.bot_id}",
                 language=language,
                 task=task,
                 passcode=self.passcode

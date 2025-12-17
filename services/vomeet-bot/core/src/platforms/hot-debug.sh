@@ -34,7 +34,7 @@ case "$MEETING_URL" in
 esac
 
 # Single hot-bot identity (assumes one hot bot at a time)
-CONTAINER_NAME="${CONTAINER_NAME:-vexa-bot-hot}"
+CONTAINER_NAME="${CONTAINER_NAME:-vomeet-bot-hot}"
 CONNECTION_ID="${CONNECTION_ID:-hot-debug}"
 REDIS_CHANNEL="${REDIS_CHANNEL:-bot_commands:hot-debug}"
 BOT_NAME="${BOT_NAME:-HotDebugBot}"
@@ -55,8 +55,8 @@ else
 fi
 
 # Configuration
-IMAGE_NAME="vexa-bot:test"
-DOCKER_NETWORK="${DOCKER_NETWORK:-vexa_dev_vexa_default}"
+IMAGE_NAME="vomeet-bot:test"
+DOCKER_NETWORK="${DOCKER_NETWORK:-vomeet_dev_vomeet_default}"
 
 # Resolve core/dist for bind mount
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"  # core root

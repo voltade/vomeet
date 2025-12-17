@@ -87,7 +87,7 @@ async def request_meeting_bot(
     api_key: str = Depends(get_api_key)
 ) -> Dict[str, Any]:
     """
-    Request a Vexa bot to join a meeting for transcription.
+    Request a Vomeet bot to join a meeting for transcription.
     
     Args:
         native_meeting_id: The unique identifier for the meeting (e.g., 'xxx-xxxx-xxx' from Google Meet URL)

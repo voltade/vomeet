@@ -1,11 +1,11 @@
-VEXA Individual Contributor License Agreement (“Agreement”) v1.0
+VOMEET Individual Contributor License Agreement (“Agreement”) v1.0
 
-Project Name: Vexa
-Project Entity: Vexa.ai Inc., steward of the Vexa open-source project (https://github.com/Vexa-ai/vexa)
+Project Name: Vomeet
+Project Entity: Voltade Pte. Ltd., steward of the Vomeet open-source project (https://github.com/voltade/vomeet)
 
-Thank you for your interest in contributing to the Vexa project (the “Project”).  
+Thank you for your interest in contributing to the Vomeet project (the “Project”).  
 To clarify the intellectual property license granted with your contributions, we ask you to sign this Contributor License Agreement (CLA).  
-This protects you as a Contributor and Vexa.ai Inc. as the steward of the Project.  
+This protects you as a Contributor and Voltade Pte. Ltd. as the steward of the Project.  
 It does not change your rights to use your own contributions for any other purpose.  
 
 ### 1. Definitions
@@ -14,7 +14,7 @@ It does not change your rights to use your own contributions for any other purpo
 
 ### 2. License Grant
 You agree that all Contributions you submit shall be governed by the **Apache License, Version 2.0** (the “Apache License”), as if you were the original Licensor.  
-You hereby grant to Vexa.ai Inc., the Project, and all recipients of the software a perpetual, worldwide, non-exclusive, royalty-free, irrevocable copyright and patent license, consistent with Section 5 of the Apache License.  
+You hereby grant to Voltade Pte. Ltd., the Project, and all recipients of the software a perpetual, worldwide, non-exclusive, royalty-free, irrevocable copyright and patent license, consistent with Section 5 of the Apache License.  
 
 ### 3. Representations
 - You confirm you are legally entitled to submit the Contributions.  

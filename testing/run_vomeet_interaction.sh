@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Vexa Bot Interaction Script
+# Vomeet Bot Interaction Script
 
 # --- Configuration ---
-# Default Vexa API base URL and Admin API URL will be constructed using ports from .env
+# Default Vomeet API base URL and Admin API URL will be constructed using ports from .env
 # Default ports if not found in .env
 DEFAULT_API_GATEWAY_HOST_PORT="8056"
 DEFAULT_ADMIN_API_HOST_PORT="8057"
@@ -100,7 +100,7 @@ echo_info "Effective ADMIN_API_URL: $ADMIN_API_URL"
 # --- Variables for New User and Bot ---
 USER_EMAIL="testuser$(date +%s)@example.com"
 USER_NAME="Test User $(date +%s)"
-BOT_NAME="VexaFirstTestBot"
+BOT_NAME="VomeetFirstTestBot"
 PLATFORM="google_meet"
 
 # --- Function to stop the bot --- 
@@ -180,7 +180,7 @@ fi
 
 # --- 2. Create Token for User ---
 echo_info "Creating API token for user ID: $USER_ID"
-# According to vexa_client.py, this endpoint does not take a JSON payload.
+# According to vomeet_client.py, this endpoint does not take a JSON payload.
 # It's a POST request to /admin/users/{user_id}/tokens
 
 # Use ADMIN_API_URL for admin actions

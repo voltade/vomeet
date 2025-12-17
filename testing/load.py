@@ -1,5 +1,5 @@
 """
-TestSuite class for managing multiple users and bots in Vexa testing scenarios.
+TestSuite class for managing multiple users and bots in Vomeet testing scenarios.
 
 This class provides:
 - User creation and management
@@ -19,8 +19,8 @@ import pandas as pd
 import sys
 import os
 # Use the fixed PyPI client
-sys.path.insert(0, '/Users/dmitriygrankin/dev/vexa-pypi-client')
-from vexa_client import VexaClient
+sys.path.insert(0, '/Users/dmitriygrankin/dev/vomeet-pypi-client')
+from vomeet_client import VomeetClient
 from bot import Bot
 
 
@@ -57,7 +57,7 @@ def create_thread_safe_session():
     
     # Set headers
     session.headers.update({
-        'User-Agent': 'Vexa-TestSuite/1.0',
+        'User-Agent': 'Vomeet-TestSuite/1.0',
         'Connection': 'close'  # Prevent connection reuse issues
     })
     
@@ -66,7 +66,7 @@ def create_thread_safe_session():
 
 class TestSuite:
     """
-    A comprehensive test suite for managing multiple Vexa users and bots.
+    A comprehensive test suite for managing multiple Vomeet users and bots.
     
     Features:
     - Create multiple users with individual API keys
@@ -84,7 +84,7 @@ class TestSuite:
         Initialize the TestSuite.
         
         Args:
-            base_url: Base URL for the Vexa API
+            base_url: Base URL for the Vomeet API
             admin_api_key: Admin API key for user creation
             use_thread_safe_sessions: Whether to use thread-safe session management
         """
@@ -95,37 +95,37 @@ class TestSuite:
         # Initialize admin client if API key provided
         self.admin_client = None
         if admin_api_key:
-            self.admin_client = self._create_vexa_client(
+            self.admin_client = self._create_vomeet_client(
                 base_url=base_url,
                 admin_key=admin_api_key
             )
         
         # Test suite state
-        self.users: List[VexaClient] = []
+        self.users: List[VomeetClient] = []
         self.bots: List[Bot] = []
         self.user_meeting_mapping: Dict[int, str] = {}  # user_index -> meeting_url
     
-    def _create_vexa_client(self, base_url: str, api_key: Optional[str] = None, 
-                           admin_key: Optional[str] = None, user_id: Optional[str] = None) -> VexaClient:
+    def _create_vomeet_client(self, base_url: str, api_key: Optional[str] = None, 
+                           admin_key: Optional[str] = None, user_id: Optional[str] = None) -> VomeetClient:
         """
-        Create a VexaClient instance.
+        Create a VomeetClient instance.
         
         Args:
-            base_url: Base URL for the Vexa API
+            base_url: Base URL for the Vomeet API
             api_key: User API key
             admin_key: Admin API key
-            user_id: User ID (not used by VexaClient constructor)
+            user_id: User ID (not used by VomeetClient constructor)
             
         Returns:
-            VexaClient instance
+            VomeetClient instance
         """
-        return VexaClient(
+        return VomeetClient(
             base_url=base_url,
             api_key=api_key,
             admin_key=admin_key
         )
         
-    def create_users(self, num_users: int) -> List[VexaClient]:
+    def create_users(self, num_users: int) -> List[VomeetClient]:
         """
         Create the specified number of users and return their client instances.
         
@@ -133,7 +133,7 @@ class TestSuite:
             num_users: Number of users to create
             
         Returns:
-            List of VexaClient instances for the created users
+            List of VomeetClient instances for the created users
         """
         if not self.admin_client:
             raise Exception("Admin API key required for user creation. Set admin_api_key in constructor.")
@@ -155,7 +155,7 @@ class TestSuite:
                 user_api_key = token_info['token']
                 
                 # Create user client
-                user_client = self._create_vexa_client(
+                user_client = self._create_vomeet_client(
                     base_url=self.base_url,
                     api_key=user_api_key,
                     user_id=user_data['id']
@@ -171,7 +171,7 @@ class TestSuite:
         print(f"Successfully created {len(self.users)} users")
         return self.users
     
-    def add_users(self, additional_users: int) -> List[VexaClient]:
+    def add_users(self, additional_users: int) -> List[VomeetClient]:
         """
         Add additional users during runtime without affecting existing users.
         
@@ -179,7 +179,7 @@ class TestSuite:
             additional_users: Number of additional users to create
             
         Returns:
-            List of newly created VexaClient instances
+            List of newly created VomeetClient instances
         """
         if not self.admin_client:
             raise Exception("Admin API key required for user creation. Set admin_api_key in constructor.")
@@ -205,7 +205,7 @@ class TestSuite:
                 user_api_key = token_info['token']
                 
                 # Create user client
-                user_client = self._create_vexa_client(
+                user_client = self._create_vomeet_client(
                     base_url=self.base_url,
                     api_key=user_api_key,
                     user_id=user_data['id']

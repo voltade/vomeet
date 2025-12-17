@@ -1,10 +1,10 @@
-# Vexa WebSocket Usage
+# Vomeet WebSocket Usage
 
 ## Overview
 
 WebSocket connections provide efficient, low-latency transcript updates compared to polling REST endpoints. Since REST transcript retrieval is not suitable for frequent polling due to server API efficiency concerns, WebSocket subscriptions offer real-time updates without the overhead of repeated HTTP requests.
 
-This document describes how to connect to Vexa's WebSocket API for real-time meeting transcription. The protocol supports subscribing to active meetings and receiving live transcript updates with proper deduplication and speaker grouping.
+This document describes how to connect to Vomeet's WebSocket API for real-time meeting transcription. The protocol supports subscribing to active meetings and receiving live transcript updates with proper deduplication and speaker grouping.
 
 **Implementation Reference**: The `testing/ws_realtime_transcription.py` script serves as a complete Python implementation of real-time transcript rendering using this WebSocket protocol. It demonstrates the full algorithm from REST bootstrap through WebSocket updates with proper deduplication, speaker grouping, and live terminal rendering.
 

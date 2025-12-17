@@ -57,9 +57,9 @@ api_key_scheme = APIKeyHeader(name="X-API-Key", description="API Key for client 
 admin_api_key_scheme = APIKeyHeader(name="X-Admin-API-Key", description="API Key for admin operations", auto_error=False)
 
 app = FastAPI(
-    title="Vexa API Gateway",
+    title="Vomeet API Gateway",
     description="""
-    **Main entry point for the Vexa platform APIs.**
+    **Main entry point for the Vomeet platform APIs.**
     
     Provides access to:
     - Bot Management (Starting/Stopping transcription bots)
@@ -77,9 +77,9 @@ app = FastAPI(
     """,
     version="1.2.0", # Incremented version
     contact={
-        "name": "Vexa Support",
-        "url": "https://vexa.io/support", # Placeholder URL
-        "email": "support@vexa.io", # Placeholder Email
+        "name": "Vomeet Support",
+        "url": "https://vomeet.io/support", # Placeholder URL
+        "email": "support@vomeet.io", # Placeholder Email
     },
     license_info={
         "name": "Proprietary",
@@ -211,8 +211,8 @@ async def forward_request(client: httpx.AsyncClient, method: str, url: str, requ
 # --- Root Endpoint --- 
 @app.get("/", tags=["General"], summary="API Gateway Root")
 async def root():
-    """Provides a welcome message for the Vexa API Gateway."""
-    return {"message": "Welcome to the Vexa API Gateway"}
+    """Provides a welcome message for the Vomeet API Gateway."""
+    return {"message": "Welcome to the Vomeet API Gateway"}
 
 # --- Bot Manager Routes --- 
 @app.post("/bots",

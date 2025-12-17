@@ -8,7 +8,7 @@ version = "0.1.0"
 authors = [
   { name="Your Name", email="you@example.com" }, # TODO: Update author details
 ]
-description = "Shared database models and schemas for the Vexa project"
+description = "Shared database models and schemas for the Vomeet project"
 readme = "README.md"
 requires-python = ">=3.9" # Adjust Python version as needed
 classifiers = [
@@ -27,8 +27,8 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/your-repo/vexa" # TODO: Update repo URL
-"Bug Tracker" = "https://github.com/your-repo/vexa/issues" # TODO: Update repo URL
+"Homepage" = "https://github.com/your-repo/vomeet" # TODO: Update repo URL
+"Bug Tracker" = "https://github.com/your-repo/vomeet/issues" # TODO: Update repo URL
 
 [tool.setuptools.packages.find]
 where = ["."]

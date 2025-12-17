@@ -1,16 +1,16 @@
-# Vexa Documentation
+# Vomeet Documentation
 
-This directory contains comprehensive documentation for Vexa self-hosted deployments.
+This directory contains comprehensive documentation for Vomeet self-hosted deployments.
 
 ## Available Documentation
 
 ### Setup & Deployment
 
-- **[Deployment Guide](deployment.md)** - Complete setup and deployment instructions for self-hosted Vexa
+- **[Deployment Guide](deployment.md)** - Complete setup and deployment instructions for self-hosted Vomeet
 
 ### User Guides
 
-- **[Self-Hosted Management Guide](self-hosted-management.md)** - Complete guide for managing users and API tokens in self-hosted Vexa deployments
+- **[Self-Hosted Management Guide](self-hosted-management.md)** - Complete guide for managing users and API tokens in self-hosted Vomeet deployments
   - User creation and management
   - API token generation and revocation
   - Complete workflow examples (curl + Python)
@@ -32,13 +32,12 @@ Interactive Jupyter notebooks for testing and development are located in the `..
 
 ## Getting Started
 
-1. **Deploy Vexa**: Follow the [Deployment Guide](deployment.md) to get Vexa running
+1. **Deploy Vomeet**: Follow the [Deployment Guide](deployment.md) to get Vomeet running
 2. **Manage Users**: Read the [Self-Hosted Management Guide](self-hosted-management.md)
 3. **Use the API**: See [User API Guide](user_api_guide.md) and [WebSocket Guide](websocket.md)
 
 ## Support
 
-- **Discord**: https://discord.gg/Ga9duGkVz9
-- **GitHub Issues**: https://github.com/Vexa-ai/vexa/issues
-- **Website**: https://vexa.ai
+- **GitHub Issues**: https://github.com/voltade/vomeet/issues
+- **Website**: https://vomeet.ai
 

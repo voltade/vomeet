@@ -178,10 +178,10 @@ This ensures bounded memory via TTLs and explicit cleanup.
 
 ## References
 
-- `vexa/services/transcription-collector/streaming/processors.py`
-- `vexa/services/transcription-collector/background/db_writer.py`
-- `vexa/docs/websocket.md`
-- `vexa/issues/bot-reconfiguration-identity-mismatch.md`
-- `vexa/issues/meeting-token-and-meeting-id-auth.md`
+- `vomeet/services/transcription-collector/streaming/processors.py`
+- `vomeet/services/transcription-collector/background/db_writer.py`
+- `vomeet/docs/websocket.md`
+- `vomeet/issues/bot-reconfiguration-identity-mismatch.md`
+- `vomeet/issues/meeting-token-and-meeting-id-auth.md`
 
 

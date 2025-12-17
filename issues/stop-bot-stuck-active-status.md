@@ -25,7 +25,7 @@ This appears related to the designed flow relying on the bot's exit callback to 
 
 Stop endpoint sends leave command, schedules delayed stop, publishes `stopping` via Redis, but intentionally does not change DB status:
 
-```684:827:vexa/services/bot-manager/app/main.py
+```684:827:vomeet/services/bot-manager/app/main.py
 @app.delete("/bots/{platform}/{native_meeting_id}",
              status_code=status.HTTP_202_ACCEPTED,
              summary="Request stop for a bot",
@@ -54,10 +54,10 @@ async def stop_bot(
 
 Exit callback updates the DB to completed/failed when called by the bot:
 
-```858:989:vexa/services/bot-manager/app/main.py
+```858:989:vomeet/services/bot-manager/app/main.py
 @app.post("/bots/internal/callback/exited",
           status_code=status.HTTP_200_OK,
-          summary="Callback for vexa-bot to report its exit status",
+          summary="Callback for vomeet-bot to report its exit status",
           include_in_schema=False)
 async def bot_exit_callback(...):
     ...
@@ -70,7 +70,7 @@ async def bot_exit_callback(...):
 
 Delayed stop kills the container after 30s, but does not update meeting status (assumes exit callback will handle it):
 
-```286:299:vexa/services/bot-manager/app/main.py
+```286:299:vomeet/services/bot-manager/app/main.py
 async def _delayed_container_stop(container_id: str, delay_seconds: int = 30):
     await asyncio.sleep(delay_seconds)
     await asyncio.to_thread(stop_bot_container, container_id)
@@ -78,7 +78,7 @@ async def _delayed_container_stop(container_id: str, delay_seconds: int = 30):
 
 Meeting status definitions include `STOPPING` as a valid intermediate state (but stop endpoint currently does not persist it):
 
-```30:56:vexa/libs/shared-models/shared_models/schemas.py
+```30:56:vomeet/libs/shared-models/shared_models/schemas.py
 class MeetingStatus(str, Enum):
     REQUESTED = "requested"
     JOINING = "joining"
@@ -91,7 +91,7 @@ class MeetingStatus(str, Enum):
 
 ## Reproduction (intermittent)
 
-Using the test notebook `vexa/nbs/0_basic_test.ipynb`:
+Using the test notebook `vomeet/nbs/0_basic_test.ipynb`:
 - Request a bot
 - Admit and verify active status
 - Call `client.stop_bot(platform=..., native_meeting_id=...)`
@@ -156,8 +156,8 @@ Using the test notebook `vexa/nbs/0_basic_test.ipynb`:
 
 ### References
 
-- `vexa/services/bot-manager/app/main.py` Stop, Exit Callback, Delayed Stop implementations
-- `vexa/libs/shared-models/shared_models/schemas.py` `MeetingStatus`
-- Test flows in `vexa/nbs/0_basic_test.ipynb`
+- `vomeet/services/bot-manager/app/main.py` Stop, Exit Callback, Delayed Stop implementations
+- `vomeet/libs/shared-models/shared_models/schemas.py` `MeetingStatus`
+- Test flows in `vomeet/nbs/0_basic_test.ipynb`
 
 

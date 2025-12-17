@@ -17,13 +17,13 @@ class DockerClient:
         # Bot container configuration
         self.bot_image = os.getenv("BOT_IMAGE", "bot:latest")
         self.transcription_service = os.getenv("TRANSCRIPTION_SERVICE", "http://transcription-service:8080")
-        self.network_name = os.getenv("DOCKER_NETWORK", "vexa_default")
+        self.network_name = os.getenv("DOCKER_NETWORK", "vomeet_default")
     
     def _count_running_bots_for_user(self, user_id: str) -> int:
         """Counts the number of running bot containers for a specific user using labels."""
         try:
             containers = self.client.containers.list(
-                filters={"label": f"vexa.user_id={user_id}", "status": "running"}
+                filters={"label": f"vomeet.user_id={user_id}", "status": "running"}
             )
             count = len(containers)
             logger.debug(f"Found {count} running bot containers for user {user_id}")
@@ -118,11 +118,11 @@ class DockerClient:
                     "MEETING_URL": meeting_url,
                     "TRANSCRIPTION_SERVICE": self.transcription_service
                 },
-                labels={"vexa.user_id": str(user_id)},
+                labels={"vomeet.user_id": str(user_id)},
                 restart_policy={"Name": "on-failure", "MaximumRetryCount": 3}
             )
             
-            logger.info(f"Created container {container_name} with label vexa.user_id={user_id}")
+            logger.info(f"Created container {container_name} with label vomeet.user_id={user_id}")
             return {"status": "created", "container_name": container_name}
         except Exception as e:
             logger.error(f"Error creating container: {e}")

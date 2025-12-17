@@ -233,7 +233,7 @@ logging.basicConfig(
 logger = logging.getLogger("bot_manager")
 
 # Initialize the FastAPI app
-app = FastAPI(title="Vexa Bot Manager")
+app = FastAPI(title="Vomeet Bot Manager")
 
 # Add CORS middleware
 app.add_middleware(
@@ -393,7 +393,7 @@ async def _delayed_container_stop(container_id: str, meeting_id: int, delay_seco
 
 @app.get("/", include_in_schema=False)
 async def root():
-    return {"message": "Vexa Bot Manager is running"}
+    return {"message": "Vomeet Bot Manager is running"}
 
 @app.post("/bots",
           response_model=MeetingResponse,
@@ -904,10 +904,10 @@ async def get_user_bots_status(
         )
 # --- END Endpoint: Get Running Bot Status --- 
 
-# --- ADDED: Endpoint for Vexa-Bot to report its exit status ---
+# --- ADDED: Endpoint for Vomeet-Bot to report its exit status ---
 @app.post("/bots/internal/callback/exited",
           status_code=status.HTTP_200_OK,
-          summary="Callback for vexa-bot to report its exit status",
+          summary="Callback for vomeet-bot to report its exit status",
           include_in_schema=False) # Hidden from public API docs
 async def bot_exit_callback(
     payload: BotExitCallbackPayload,
@@ -1046,10 +1046,10 @@ async def bot_exit_callback(
             detail="An internal error occurred while processing the bot exit callback."
         )
 
-# --- ADDED: Endpoint for Vexa-Bot to report its startup status ---
+# --- ADDED: Endpoint for Vomeet-Bot to report its startup status ---
 @app.post("/bots/internal/callback/started",
           status_code=status.HTTP_200_OK,
-          summary="Callback for vexa-bot to report its startup status",
+          summary="Callback for vomeet-bot to report its startup status",
           include_in_schema=False) # Hidden from public API docs
 async def bot_startup_callback(
     payload: BotStartupCallbackPayload,
@@ -1133,10 +1133,10 @@ async def bot_startup_callback(
             detail="An internal error occurred while processing the bot startup callback."
         )
 
-# --- ADDED: Endpoint for Vexa-Bot to report joining status ---
+# --- ADDED: Endpoint for Vomeet-Bot to report joining status ---
 @app.post("/bots/internal/callback/joining",
           status_code=status.HTTP_200_OK,
-          summary="Callback for vexa-bot to report joining status",
+          summary="Callback for vomeet-bot to report joining status",
           include_in_schema=False) # Hidden from public API docs
 async def bot_joining_callback(
     payload: BotStartupCallbackPayload,  # Reuse same payload structure
@@ -1205,10 +1205,10 @@ async def bot_joining_callback(
             detail="An internal error occurred while processing the bot joining callback."
         )
 
-# --- ADDED: Endpoint for Vexa-Bot to report awaiting admission status ---
+# --- ADDED: Endpoint for Vomeet-Bot to report awaiting admission status ---
 @app.post("/bots/internal/callback/awaiting_admission",
           status_code=status.HTTP_200_OK,
-          summary="Callback for vexa-bot to report awaiting admission status",
+          summary="Callback for vomeet-bot to report awaiting admission status",
           include_in_schema=False) # Hidden from public API docs
 async def bot_awaiting_admission_callback(
     payload: BotStartupCallbackPayload,  # Reuse same payload structure

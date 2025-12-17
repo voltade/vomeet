@@ -177,7 +177,7 @@ const handleRedisMessage = async (message: string, channel: string, page: Page |
                                   }
                               }, 500);
                               try {
-                                  const ev = new CustomEvent('vexa:reconfigure', { detail: { lang, task } });
+                                  const ev = new CustomEvent('vomeet:reconfigure', { detail: { lang, task } });
                                   document.dispatchEvent(ev);
                               } catch {}
                           }

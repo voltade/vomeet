@@ -261,7 +261,7 @@ class TranscriptionCollectorClient:
         """Publish a speaker_activity event to the new Redis stream.
         
         Args:
-            event_data: The payload from the Vexa Bot's speaker_activity message.
+            event_data: The payload from the Vomeet Bot's speaker_activity message.
                         This includes uid, relative_client_timestamp_ms, participant_name, etc.
         
         Returns:
@@ -1143,7 +1143,7 @@ class TranscriptionServer:
             "Port": int(self._listen_port),
           "Tags": [
               "websocket",
-              "vexa",
+              "vomeet",
               "traefik.enable=true",
               "traefik.http.routers.whisperlive.rule=PathPrefix(`/ws`)",
               "traefik.http.routers.whisperlive.service=whisperlive",
@@ -1546,7 +1546,7 @@ class TranscriptionServer:
 
     def handle_speaker_activity_update(self, websocket, control_message):
         """
-        Handles incoming 'speaker_activity' updates from the client (Vexa Bot).
+        Handles incoming 'speaker_activity' updates from the client (Vomeet Bot).
         For Phase 2, this will forward the event payload to a new Redis stream.
         """
         client = self.client_manager.get_client(websocket) # CORRECTED
@@ -1573,7 +1573,7 @@ class TranscriptionServer:
             )
 
         if client.collector_client:  # CORRECTED: changed from collector_client_ref to collector_client
-            # The event_payload is what Vexa Bot sends.
+            # The event_payload is what Vomeet Bot sends.
             # The publish_speaker_event method in collector_client will add server_received_timestamp_iso.
             success = client.collector_client.publish_speaker_event(event_payload)  # CORRECTED: changed from collector_client_ref to collector_client
             if success:

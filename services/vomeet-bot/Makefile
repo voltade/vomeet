@@ -1,7 +1,7 @@
-# Hot Dev Kit (local to vexa-bot)
-IMAGE_NAME ?= vexa-bot:test
+# Hot Dev Kit (local to vomeet-bot)
+IMAGE_NAME ?= vomeet-bot:test
 MEETING_URL ?=
-DOCKER_NETWORK ?= vexa_dev_vexa_default
+DOCKER_NETWORK ?= vomeet_dev_vomeet_default
 HOT_CHANNEL := bot_commands:hot-debug
 
 .PHONY: build rebuild test publish publish-leave

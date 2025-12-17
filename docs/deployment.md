@@ -1,4 +1,4 @@
-# Vexa Deployment Guide
+# Vomeet Deployment Guide
 
 Real-time Google Meet and Microsoft Teams transcription API. Get up and running in minutes.
 
@@ -9,13 +9,13 @@ Real-time Google Meet and Microsoft Teams transcription API. Get up and running 
 ### 1. If you have an established development machine
 Try running directly - this might work instantly:
 ```bash
-git clone https://github.com/Vexa-ai/vexa.git && cd vexa
+git clone https://github.com/voltade/vomeet.git && cd vomeet
 make all  # CPU laptop (whisper tiny model - good for development)
 ```
 or 
 
 ```bash
-git clone https://github.com/Vexa-ai/vexa.git && cd vexa
+git clone https://github.com/voltade/vomeet.git && cd vomeet
 make all TARGET=gpu # GPU machine (whisper medium model - much better quality)
 ```
 
@@ -32,7 +32,7 @@ If you change code later, just run `make all` again - it rebuilds what's needed 
 
 Sets up everything for you on a fresh VM:
 ```bash
-git clone https://github.com/Vexa-ai/vexa.git && cd vexa
+git clone https://github.com/voltade/vomeet.git && cd vomeet
 sudo ./fresh_setup.sh --gpu    # or --cpu for CPU-only hosts
 make all TARGET=gpu             # or make all for CPU
 ```
@@ -71,7 +71,7 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 
 # Deploy
-git clone https://github.com/Vexa-ai/vexa.git && cd vexa
+git clone https://github.com/voltade/vomeet.git && cd vomeet
 # make all              # CPU (tiny model)
 make all TARGET=gpu # GPU (medium model)
 ```
@@ -79,7 +79,7 @@ make all TARGET=gpu # GPU (medium model)
 **macOS (CPU only):**
 Install Docker Desktop, then:
 ```bash
-git clone https://github.com/Vexa-ai/vexa.git && cd vexa
+git clone https://github.com/voltade/vomeet.git && cd vomeet
 make all
 ```
 
@@ -113,7 +113,7 @@ make down      # Stop services
 make test-api  # Quick API connectivity test
 ```
 
-## Managing Self-Hosted Vexa
+## Managing Self-Hosted Vomeet
 
 For detailed guidance on managing users and API tokens in your self-hosted deployment, see:
 
@@ -139,4 +139,4 @@ This guide covers:
 
 ---
 
-**Need help?** Join our [Discord Community](https://discord.gg/Ga9duGkVz9) | **Video tutorial:** [3-minute setup guide](https://www.youtube.com/watch?v=bHMIByieVek)
+**Need help?** Open a GitHub issue: https://github.com/voltade/vomeet/issues | **Video tutorial:** [3-minute setup guide](https://www.youtube.com/watch?v=bHMIByieVek)
