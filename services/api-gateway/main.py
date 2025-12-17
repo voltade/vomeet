@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional, Set, Tuple
 import asyncio
 import redis.asyncio as aioredis
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Import schemas for documentation
 from shared_models.schemas import (
@@ -213,6 +213,15 @@ async def forward_request(client: httpx.AsyncClient, method: str, url: str, requ
 async def root():
     """Provides a welcome message for the Vomeet API Gateway."""
     return {"message": "Welcome to the Vomeet API Gateway"}
+
+@app.get("/healthz", tags=["General"], summary="Health check")
+async def healthz():
+    """Lightweight health endpoint for probes."""
+    return {
+        "status": "ok",
+        "service": "api-gateway",
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
 
 # --- Bot Manager Routes --- 
 @app.post("/bots",

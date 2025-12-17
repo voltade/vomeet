@@ -54,6 +54,7 @@ make all            # CPU by default (Whisper tiny) — good for development
 
 * Full guide: [docs/deployment.md](docs/deployment.md)
 * For self-hosted API key: follow `vomeet/nbs/0_basic_test.ipynb`
+* Health: API Gateway at `http://localhost:18056/healthz`
 
 ## 1. Send bot to meeting:
 

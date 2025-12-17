@@ -140,3 +140,7 @@ This guide covers:
 ---
 
 **Need help?** Open a GitHub issue: https://github.com/voltade/vomeet/issues | **Video tutorial:** [3-minute setup guide](https://www.youtube.com/watch?v=bHMIByieVek)
+
+## Health Checks
+
+- API Gateway: `http://localhost:18056/healthz`
