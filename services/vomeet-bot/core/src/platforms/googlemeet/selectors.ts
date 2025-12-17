@@ -55,8 +55,6 @@ export const googleRejectionIndicators: string[] = [
   'text="Meeting link expired"',
   
   // Error dialog indicators
-  '[role="dialog"]:has-text("not found")',
-  '[role="alertdialog"]:has-text("not found")',
   '[role="dialog"]:has-text("ended")',
   '[role="alertdialog"]:has-text("ended")',
   
