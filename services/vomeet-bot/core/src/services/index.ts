@@ -1,2 +1,10 @@
-export { WhisperLiveService, type WhisperLiveConfig, type WhisperLiveConnection } from './whisperlive';
-export { AudioService, type AudioProcessorConfig, type AudioProcessor } from './audio';
+export {
+	type AudioProcessor,
+	type AudioProcessorConfig,
+	AudioService,
+} from "./audio";
+export {
+	type WhisperLiveConfig,
+	type WhisperLiveConnection,
+	WhisperLiveService,
+} from "./whisperlive";

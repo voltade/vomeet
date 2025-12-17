@@ -1,319 +1,356 @@
-import type { BotConfig } from '../types';
-import { log } from '../utils';
+import type { BotConfig } from "../types";
+import { log } from "../utils";
 
 export interface WhisperLiveConfig {
-  whisperLiveUrl?: string;
+	whisperLiveUrl?: string;
 }
 
 export interface WhisperLiveConnection {
-  socket: WebSocket | null;
-  isServerReady: boolean;
-  sessionUid: string;
-  allocatedServerUrl: string | null;
+	socket: WebSocket | null;
+	isServerReady: boolean;
+	sessionUid: string;
+	allocatedServerUrl: string | null;
 }
 
 export class WhisperLiveService {
-  private config: WhisperLiveConfig;
-  private connection: WhisperLiveConnection | null = null;
+	private config: WhisperLiveConfig;
+	private connection: WhisperLiveConnection | null = null;
 
-  constructor(config: WhisperLiveConfig) {
-    this.config = config;
-  }
+	constructor(config: WhisperLiveConfig) {
+		this.config = config;
+	}
 
-  /**
-   * Initialize WhisperLive URL via LB (Traefik/Consul)
-   */
-  async initialize(): Promise<string | null> {
-    try {
-      const allocatedUrl = this.config.whisperLiveUrl || (process.env.WHISPER_LIVE_URL as string) || null;
-      if (!allocatedUrl) return null;
+	/**
+	 * Initialize WhisperLive URL via LB (Traefik/Consul)
+	 */
+	async initialize(): Promise<string | null> {
+		try {
+			const allocatedUrl =
+				this.config.whisperLiveUrl ||
+				(process.env.WHISPER_LIVE_URL as string) ||
+				null;
+			if (!allocatedUrl) return null;
 
-      // Store connection info
-      this.connection = {
-        socket: null,
-        isServerReady: false,
-        sessionUid: this.generateUUID(),
-        allocatedServerUrl: allocatedUrl
-      };
+			// Store connection info
+			this.connection = {
+				socket: null,
+				isServerReady: false,
+				sessionUid: this.generateUUID(),
+				allocatedServerUrl: allocatedUrl,
+			};
 
-      return allocatedUrl;
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log(`[WhisperLive] Initialization error: ${errorMessage}`);
-      return null;
-    }
-  }
+			return allocatedUrl;
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			log(`[WhisperLive] Initialization error: ${errorMessage}`);
+			return null;
+		}
+	}
 
-  /**
-   * Create WebSocket connection to WhisperLive server
-   */
-  async connectToWhisperLive(
-    botConfig: BotConfig,
-    onMessage: (data: unknown) => void,
-    onError: (error: Event) => void,
-    onClose: (event: CloseEvent) => void
-  ): Promise<WebSocket | null> {
-    const connection = this.connection;
-    if (!connection?.allocatedServerUrl) {
-      log("[WhisperLive] No allocated server URL available");
-      return null;
-    }
+	/**
+	 * Create WebSocket connection to WhisperLive server
+	 */
+	async connectToWhisperLive(
+		botConfig: BotConfig,
+		onMessage: (data: unknown) => void,
+		onError: (error: Event) => void,
+		onClose: (event: CloseEvent) => void,
+	): Promise<WebSocket | null> {
+		const connection = this.connection;
+		if (!connection?.allocatedServerUrl) {
+			log("[WhisperLive] No allocated server URL available");
+			return null;
+		}
 
-    const serverUrl = connection.allocatedServerUrl;
-    try {
-      const socket = new WebSocket(serverUrl);
-      
-      // Set up event handlers
-      socket.onopen = () => {
-        log(`[WhisperLive] Connected to ${serverUrl}`);
-        connection.sessionUid = this.generateUUID();
-        connection.isServerReady = false;
-        
-        // Send initial configuration
-        this.sendInitialConfig(socket, botConfig, connection);
-      };
+		const serverUrl = connection.allocatedServerUrl;
+		try {
+			const socket = new WebSocket(serverUrl);
 
-      socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        onMessage(data);
-      };
+			// Set up event handlers
+			socket.onopen = () => {
+				log(`[WhisperLive] Connected to ${serverUrl}`);
+				connection.sessionUid = this.generateUUID();
+				connection.isServerReady = false;
 
-      socket.onerror = onError;
-      socket.onclose = onClose;
+				// Send initial configuration
+				this.sendInitialConfig(socket, botConfig, connection);
+			};
 
-      connection.socket = socket;
-      return socket;
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log(`[WhisperLive] Connection error: ${errorMessage}`);
-      return null;
-    }
-  }
+			socket.onmessage = (event) => {
+				const data = JSON.parse(event.data);
+				onMessage(data);
+			};
 
-  /**
-   * Send initial configuration to WhisperLive server
-   */
-  private sendInitialConfig(socket: WebSocket, botConfig: BotConfig, connection: WhisperLiveConnection): void {
-    const configPayload = {
-      uid: connection.sessionUid,
-      language: botConfig.language || null,
-      task: botConfig.task || "transcribe",
-      model: null, // Let server use WHISPER_MODEL_SIZE from environment
-      use_vad: false,
-      platform: botConfig.platform,
-      token: botConfig.token,  // MeetingToken (HS256 JWT)
-      meeting_id: botConfig.meeting_id,
-      meeting_url: botConfig.meetingUrl || null,
-    };
+			socket.onerror = onError;
+			socket.onclose = onClose;
 
-    const jsonPayload = JSON.stringify(configPayload);
-    log(`[WhisperLive] Sending initial config: ${jsonPayload}`);
-    socket.send(jsonPayload);
-  }
+			connection.socket = socket;
+			return socket;
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			log(`[WhisperLive] Connection error: ${errorMessage}`);
+			return null;
+		}
+	}
 
-  /**
-   * Send audio data to WhisperLive
-   */
-  sendAudioData(audioData: Float32Array): boolean {
-    if (!this.connection?.socket || this.connection.socket.readyState !== WebSocket.OPEN) {
-      return false;
-    }
+	/**
+	 * Send initial configuration to WhisperLive server
+	 */
+	private sendInitialConfig(
+		socket: WebSocket,
+		botConfig: BotConfig,
+		connection: WhisperLiveConnection,
+	): void {
+		const configPayload = {
+			uid: connection.sessionUid,
+			language: botConfig.language || null,
+			task: botConfig.task || "transcribe",
+			model: null, // Let server use WHISPER_MODEL_SIZE from environment
+			use_vad: false,
+			platform: botConfig.platform,
+			token: botConfig.token, // MeetingToken (HS256 JWT)
+			meeting_id: botConfig.meeting_id,
+			meeting_url: botConfig.meetingUrl || null,
+		};
 
-    try {
-      this.connection.socket.send(audioData);
-      return true;
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log(`[WhisperLive] Error sending audio data: ${errorMessage}`);
-      return false;
-    }
-  }
+		const jsonPayload = JSON.stringify(configPayload);
+		log(`[WhisperLive] Sending initial config: ${jsonPayload}`);
+		socket.send(jsonPayload);
+	}
 
-  /**
-   * Send audio chunk metadata to WhisperLive
-   */
-  sendAudioChunkMetadata(chunkLength: number, sampleRate: number): boolean {
-    if (!this.connection?.socket || this.connection.socket.readyState !== WebSocket.OPEN) {
-      return false;
-    }
+	/**
+	 * Send audio data to WhisperLive
+	 */
+	sendAudioData(audioData: Float32Array): boolean {
+		if (
+			!this.connection?.socket ||
+			this.connection.socket.readyState !== WebSocket.OPEN
+		) {
+			return false;
+		}
 
-    const meta = {
-      type: "audio_chunk_metadata",
-      payload: {
-        length: chunkLength,
-        sample_rate: sampleRate,
-        client_timestamp_ms: Date.now(),
-      },
-    };
+		try {
+			this.connection.socket.send(audioData);
+			return true;
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			log(`[WhisperLive] Error sending audio data: ${errorMessage}`);
+			return false;
+		}
+	}
 
-    try {
-      this.connection.socket.send(JSON.stringify(meta));
-      return true;
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log(`[WhisperLive] Error sending audio chunk metadata: ${errorMessage}`);
-      return false;
-    }
-  }
+	/**
+	 * Send audio chunk metadata to WhisperLive
+	 */
+	sendAudioChunkMetadata(chunkLength: number, sampleRate: number): boolean {
+		if (
+			!this.connection?.socket ||
+			this.connection.socket.readyState !== WebSocket.OPEN
+		) {
+			return false;
+		}
 
-  /**
-   * Send speaker event to WhisperLive
-   */
-  sendSpeakerEvent(eventType: string, participantName: string, participantId: string, relativeTimestampMs: number, botConfig: BotConfig): boolean {
-    if (!this.connection?.socket || this.connection.socket.readyState !== WebSocket.OPEN) {
-      return false;
-    }
+		const meta = {
+			type: "audio_chunk_metadata",
+			payload: {
+				length: chunkLength,
+				sample_rate: sampleRate,
+				client_timestamp_ms: Date.now(),
+			},
+		};
 
-    const speakerEventMessage = {
-      type: "speaker_activity",
-      payload: {
-        event_type: eventType,
-        participant_name: participantName,
-        participant_id_meet: participantId,
-        relative_client_timestamp_ms: relativeTimestampMs,
-        uid: this.connection.sessionUid,
-        token: botConfig.token,
-        platform: botConfig.platform,
-        meeting_id: botConfig.nativeMeetingId,
-        meeting_url: botConfig.meetingUrl
-      }
-    };
+		try {
+			this.connection.socket.send(JSON.stringify(meta));
+			return true;
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			log(`[WhisperLive] Error sending audio chunk metadata: ${errorMessage}`);
+			return false;
+		}
+	}
 
-    try {
-      this.connection.socket.send(JSON.stringify(speakerEventMessage));
-      return true;
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log(`[WhisperLive] Error sending speaker event: ${errorMessage}`);
-      return false;
-    }
-  }
+	/**
+	 * Send speaker event to WhisperLive
+	 */
+	sendSpeakerEvent(
+		eventType: string,
+		participantName: string,
+		participantId: string,
+		relativeTimestampMs: number,
+		botConfig: BotConfig,
+	): boolean {
+		if (
+			!this.connection?.socket ||
+			this.connection.socket.readyState !== WebSocket.OPEN
+		) {
+			return false;
+		}
 
-  /**
-   * Send session control message (e.g., LEAVING_MEETING)
-   */
-  sendSessionControl(event: string, botConfig: BotConfig): boolean {
-    if (!this.connection?.socket || this.connection.socket.readyState !== WebSocket.OPEN) {
-      return false;
-    }
+		const speakerEventMessage = {
+			type: "speaker_activity",
+			payload: {
+				event_type: eventType,
+				participant_name: participantName,
+				participant_id_meet: participantId,
+				relative_client_timestamp_ms: relativeTimestampMs,
+				uid: this.connection.sessionUid,
+				token: botConfig.token,
+				platform: botConfig.platform,
+				meeting_id: botConfig.nativeMeetingId,
+				meeting_url: botConfig.meetingUrl,
+			},
+		};
 
-    const sessionControlMessage = {
-      type: "session_control",
-      payload: {
-        event: event,
-        uid: this.connection.sessionUid,
-        client_timestamp_ms: Date.now(),
-        token: botConfig.token,
-        platform: botConfig.platform,
-        meeting_id: botConfig.nativeMeetingId
-      }
-    };
+		try {
+			this.connection.socket.send(JSON.stringify(speakerEventMessage));
+			return true;
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			log(`[WhisperLive] Error sending speaker event: ${errorMessage}`);
+			return false;
+		}
+	}
 
-    try {
-      this.connection.socket.send(JSON.stringify(sessionControlMessage));
-      return true;
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log(`[WhisperLive] Error sending session control: ${errorMessage}`);
-      return false;
-    }
-  }
+	/**
+	 * Send session control message (e.g., LEAVING_MEETING)
+	 */
+	sendSessionControl(event: string, botConfig: BotConfig): boolean {
+		if (
+			!this.connection?.socket ||
+			this.connection.socket.readyState !== WebSocket.OPEN
+		) {
+			return false;
+		}
 
-  /**
-   * Get next available WhisperLive server candidate
-   */
-  async getNextCandidate(failedUrl: string | null): Promise<string | null> {
-    log(`[WhisperLive] getNextCandidate called. Failed URL: ${failedUrl}`);
-    return this.connection?.allocatedServerUrl || this.config.whisperLiveUrl || (process.env.WHISPER_LIVE_URL as string) || null;
-  }
+		const sessionControlMessage = {
+			type: "session_control",
+			payload: {
+				event: event,
+				uid: this.connection.sessionUid,
+				client_timestamp_ms: Date.now(),
+				token: botConfig.token,
+				platform: botConfig.platform,
+				meeting_id: botConfig.nativeMeetingId,
+			},
+		};
 
-  // Legacy allocator removed; selection handled by external load balancer
+		try {
+			this.connection.socket.send(JSON.stringify(sessionControlMessage));
+			return true;
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			log(`[WhisperLive] Error sending session control: ${errorMessage}`);
+			return false;
+		}
+	}
 
-  /**
-   * Deallocate a WhisperLive server (decrement its score)
-   */
-  // Legacy deallocator removed
+	/**
+	 * Get next available WhisperLive server candidate
+	 */
+	async getNextCandidate(failedUrl: string | null): Promise<string | null> {
+		log(`[WhisperLive] getNextCandidate called. Failed URL: ${failedUrl}`);
+		return (
+			this.connection?.allocatedServerUrl ||
+			this.config.whisperLiveUrl ||
+			(process.env.WHISPER_LIVE_URL as string) ||
+			null
+		);
+	}
 
-  /**
-   * Check if server is ready
-   */
-  isReady(): boolean {
-    return this.connection?.isServerReady || false;
-  }
+	// Legacy allocator removed; selection handled by external load balancer
 
-  /**
-   * Set server ready state
-   */
-  setServerReady(ready: boolean): void {
-    if (this.connection) {
-      this.connection.isServerReady = ready;
-    }
-  }
+	/**
+	 * Deallocate a WhisperLive server (decrement its score)
+	 */
+	// Legacy deallocator removed
 
-  /**
-   * Get current session UID
-   */
-  getSessionUid(): string | null {
-    return this.connection?.sessionUid || null;
-  }
+	/**
+	 * Check if server is ready
+	 */
+	isReady(): boolean {
+		return this.connection?.isServerReady || false;
+	}
 
-  /**
-   * Close connection and cleanup
-   */
-  async cleanup(): Promise<void> {
-    if (this.connection?.socket) {
-      this.connection.socket.close();
-      this.connection.socket = null;
-    }
+	/**
+	 * Set server ready state
+	 */
+	setServerReady(ready: boolean): void {
+		if (this.connection) {
+			this.connection.isServerReady = ready;
+		}
+	}
 
-    this.connection = null;
-  }
+	/**
+	 * Get current session UID
+	 */
+	getSessionUid(): string | null {
+		return this.connection?.sessionUid || null;
+	}
 
-  /**
-   * Initialize WhisperLive connection with STUBBORN reconnection - NEVER GIVES UP!
-   * This method will keep retrying until a connection is established
-   */
-  async initializeWithStubbornReconnection(platform: string): Promise<string> {
-    let whisperLiveUrl = await this.initialize();
-    
-    // STUBBORN MODE: NEVER GIVE UP! Keep trying until we get a WhisperLive connection
-    let retryCount = 0;
-    while (!whisperLiveUrl) {
-      retryCount++;
-      const delay = Math.min(2000 * 1.5 ** Math.min(retryCount, 10), 10000); // Exponential backoff, max 10s
-      log(`[STUBBORN] ❌ Could not initialize WhisperLive service for ${platform} (attempt ${retryCount}). NEVER GIVING UP! Retrying in ${delay}ms...`);
-      
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, delay));
-      
-      // Try again with the current service instance
-      whisperLiveUrl = await this.initialize();
-      
-      if (whisperLiveUrl) {
-        log(`[STUBBORN] ✅ WhisperLive service initialized successfully for ${platform} after ${retryCount} attempts!`);
-        break;
-      }
-    }
-    
-    return whisperLiveUrl;
-  }
+	/**
+	 * Close connection and cleanup
+	 */
+	async cleanup(): Promise<void> {
+		if (this.connection?.socket) {
+			this.connection.socket.close();
+			this.connection.socket = null;
+		}
 
-  /**
-   * Generate UUID for session identification
-   */
-  private generateUUID(): string {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID();
-    } else {
-      // Basic fallback if crypto.randomUUID is not available
-      return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
-        /[xy]/g,
-        (c) => {
-          const r = (Math.random() * 16) | 0;
-          const v = c === "x" ? r : (r & 0x3) | 0x8;
-          return v.toString(16);
-        }
-      );
-    }
-  }
+		this.connection = null;
+	}
+
+	/**
+	 * Initialize WhisperLive connection with STUBBORN reconnection - NEVER GIVES UP!
+	 * This method will keep retrying until a connection is established
+	 */
+	async initializeWithStubbornReconnection(platform: string): Promise<string> {
+		let whisperLiveUrl = await this.initialize();
+
+		// STUBBORN MODE: NEVER GIVE UP! Keep trying until we get a WhisperLive connection
+		let retryCount = 0;
+		while (!whisperLiveUrl) {
+			retryCount++;
+			const delay = Math.min(2000 * 1.5 ** Math.min(retryCount, 10), 10000); // Exponential backoff, max 10s
+			log(
+				`[STUBBORN] ❌ Could not initialize WhisperLive service for ${platform} (attempt ${retryCount}). NEVER GIVING UP! Retrying in ${delay}ms...`,
+			);
+
+			// Wait before retrying
+			await new Promise((resolve) => setTimeout(resolve, delay));
+
+			// Try again with the current service instance
+			whisperLiveUrl = await this.initialize();
+
+			if (whisperLiveUrl) {
+				log(
+					`[STUBBORN] ✅ WhisperLive service initialized successfully for ${platform} after ${retryCount} attempts!`,
+				);
+				break;
+			}
+		}
+
+		return whisperLiveUrl;
+	}
+
+	/**
+	 * Generate UUID for session identification
+	 */
+	private generateUUID(): string {
+		if (typeof crypto !== "undefined" && crypto.randomUUID) {
+			return crypto.randomUUID();
+		} else {
+			// Basic fallback if crypto.randomUUID is not available
+			return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+				const r = (Math.random() * 16) | 0;
+				const v = c === "x" ? r : (r & 0x3) | 0x8;
+				return v.toString(16);
+			});
+		}
+	}
 }
