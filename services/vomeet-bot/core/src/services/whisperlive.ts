@@ -1,5 +1,5 @@
+import type { BotConfig } from '../types';
 import { log } from '../utils';
-import { BotConfig } from '../types';
 
 export interface WhisperLiveConfig {
   whisperLiveUrl?: string;
@@ -37,8 +37,9 @@ export class WhisperLiveService {
       };
 
       return allocatedUrl;
-    } catch (error: any) {
-      log(`[WhisperLive] Initialization error: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`[WhisperLive] Initialization error: ${errorMessage}`);
       return null;
     }
   }
@@ -48,26 +49,28 @@ export class WhisperLiveService {
    */
   async connectToWhisperLive(
     botConfig: BotConfig,
-    onMessage: (data: any) => void,
+    onMessage: (data: unknown) => void,
     onError: (error: Event) => void,
     onClose: (event: CloseEvent) => void
   ): Promise<WebSocket | null> {
-    if (!this.connection?.allocatedServerUrl) {
+    const connection = this.connection;
+    if (!connection?.allocatedServerUrl) {
       log("[WhisperLive] No allocated server URL available");
       return null;
     }
 
+    const serverUrl = connection.allocatedServerUrl;
     try {
-      const socket = new WebSocket(this.connection.allocatedServerUrl);
+      const socket = new WebSocket(serverUrl);
       
       // Set up event handlers
       socket.onopen = () => {
-        log(`[WhisperLive] Connected to ${this.connection!.allocatedServerUrl}`);
-        this.connection!.sessionUid = this.generateUUID();
-        this.connection!.isServerReady = false;
+        log(`[WhisperLive] Connected to ${serverUrl}`);
+        connection.sessionUid = this.generateUUID();
+        connection.isServerReady = false;
         
         // Send initial configuration
-        this.sendInitialConfig(socket, botConfig);
+        this.sendInitialConfig(socket, botConfig, connection);
       };
 
       socket.onmessage = (event) => {
@@ -78,10 +81,11 @@ export class WhisperLiveService {
       socket.onerror = onError;
       socket.onclose = onClose;
 
-      this.connection.socket = socket;
+      connection.socket = socket;
       return socket;
-    } catch (error: any) {
-      log(`[WhisperLive] Connection error: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`[WhisperLive] Connection error: ${errorMessage}`);
       return null;
     }
   }
@@ -89,9 +93,9 @@ export class WhisperLiveService {
   /**
    * Send initial configuration to WhisperLive server
    */
-  private sendInitialConfig(socket: WebSocket, botConfig: BotConfig): void {
+  private sendInitialConfig(socket: WebSocket, botConfig: BotConfig, connection: WhisperLiveConnection): void {
     const configPayload = {
-      uid: this.connection!.sessionUid,
+      uid: connection.sessionUid,
       language: botConfig.language || null,
       task: botConfig.task || "transcribe",
       model: null, // Let server use WHISPER_MODEL_SIZE from environment
@@ -118,8 +122,9 @@ export class WhisperLiveService {
     try {
       this.connection.socket.send(audioData);
       return true;
-    } catch (error: any) {
-      log(`[WhisperLive] Error sending audio data: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`[WhisperLive] Error sending audio data: ${errorMessage}`);
       return false;
     }
   }
@@ -144,8 +149,9 @@ export class WhisperLiveService {
     try {
       this.connection.socket.send(JSON.stringify(meta));
       return true;
-    } catch (error: any) {
-      log(`[WhisperLive] Error sending audio chunk metadata: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`[WhisperLive] Error sending audio chunk metadata: ${errorMessage}`);
       return false;
     }
   }
@@ -176,8 +182,9 @@ export class WhisperLiveService {
     try {
       this.connection.socket.send(JSON.stringify(speakerEventMessage));
       return true;
-    } catch (error: any) {
-      log(`[WhisperLive] Error sending speaker event: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`[WhisperLive] Error sending speaker event: ${errorMessage}`);
       return false;
     }
   }
@@ -205,8 +212,9 @@ export class WhisperLiveService {
     try {
       this.connection.socket.send(JSON.stringify(sessionControlMessage));
       return true;
-    } catch (error: any) {
-      log(`[WhisperLive] Error sending session control: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`[WhisperLive] Error sending session control: ${errorMessage}`);
       return false;
     }
   }
@@ -272,7 +280,7 @@ export class WhisperLiveService {
     let retryCount = 0;
     while (!whisperLiveUrl) {
       retryCount++;
-      const delay = Math.min(2000 * Math.pow(1.5, Math.min(retryCount, 10)), 10000); // Exponential backoff, max 10s
+      const delay = Math.min(2000 * 1.5 ** Math.min(retryCount, 10), 10000); // Exponential backoff, max 10s
       log(`[STUBBORN] ❌ Could not initialize WhisperLive service for ${platform} (attempt ${retryCount}). NEVER GIVING UP! Retrying in ${delay}ms...`);
       
       // Wait before retrying
@@ -300,9 +308,9 @@ export class WhisperLiveService {
       // Basic fallback if crypto.randomUUID is not available
       return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
         /[xy]/g,
-        function (c) {
-          var r = (Math.random() * 16) | 0,
-            v = c == "x" ? r : (r & 0x3) | 0x8;
+        (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === "x" ? r : (r & 0x3) | 0x8;
           return v.toString(16);
         }
       );
