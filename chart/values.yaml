@@ -103,6 +103,9 @@ transcription-collector:
 # Use external database or deploy PostgreSQL
 postgresql:
   enabled: true
+  # Override global registry - bitnami images are on docker.io
+  global:
+    imageRegistry: docker.io
   auth:
     username: vomeet
     password: ""  # Set via --set or secrets
@@ -128,6 +131,9 @@ externalDatabase:
 
 redis:
   enabled: true
+  # Override global registry - bitnami images are on docker.io
+  global:
+    imageRegistry: docker.io
   architecture: standalone
   auth:
     enabled: false

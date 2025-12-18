@@ -168,9 +168,14 @@ async def _get_full_transcript_segments(
 
     return deduped
 
+@router.get("/healthz")
+async def healthz():
+    """Simple health check for k8s probes"""
+    return {"status": "ok"}
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request, db: AsyncSession = Depends(get_db)):
-    """Health check endpoint"""
+    """Detailed health check endpoint"""
     redis_status = "healthy"
     db_status = "healthy"
     

@@ -400,6 +400,10 @@ async def _delayed_container_stop(container_id: str, meeting_id: int, delay_seco
 async def root():
     return {"message": "Vomeet Bot Manager is running"}
 
+@app.get("/healthz", tags=["General"])
+async def healthz():
+    return {"status": "ok"}
+
 @app.post("/bots",
           response_model=MeetingResponse,
           status_code=status.HTTP_201_CREATED,

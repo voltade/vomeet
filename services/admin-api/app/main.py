@@ -576,3 +576,7 @@ app.include_router(user_router)
 @app.get("/")
 async def root():
     return {"message": "Vomeet Admin API"}
+
+@app.get("/healthz", tags=["General"])
+async def healthz():
+    return {"status": "ok"}
