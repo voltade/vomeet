@@ -547,6 +547,41 @@ async def websocket_multiplex(ws: WebSocket):
         for task in sub_tasks.values():
             task.cancel()
 
+
+# ============================================================================
+# Cloudflare Whisper Proxy Ingestion Endpoint
+# ============================================================================
+
+@app.post("/transcripts/webhook",
+    tags=["Internal"],
+    summary="Webhook for transcription callbacks",
+    description="Internal endpoint for CF Workers proxy to submit transcriptions",
+    include_in_schema=False  # Hide from public docs
+)
+async def transcription_webhook(request: Request):
+    """
+    Webhook endpoint that receives transcription results from Cloudflare Worker.
+    Forwards to transcription-collector for storage.
+    """
+    body = await request.body()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{TRANSCRIPTION_COLLECTOR_URL}/transcripts/webhook",
+                content=body,
+                headers={"Content-Type": "application/json"},
+                timeout=30.0
+            )
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Transcription collector error: {str(e)}")
+
+
 # --- Main Execution --- 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 

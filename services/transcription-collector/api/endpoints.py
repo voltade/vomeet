@@ -547,4 +547,123 @@ async def delete_meeting(
     
     logger.info(f"[API] Successfully purged transcripts and anonymized meeting {internal_meeting_id}")
     
-    return {"message": f"Meeting {platform.value}/{native_meeting_id} transcripts deleted and data anonymized"} 
+    return {"message": f"Meeting {platform.value}/{native_meeting_id} transcripts deleted and data anonymized"}
+
+
+# ============================================================================
+# Cloudflare Whisper Proxy Ingestion Endpoint
+# ============================================================================
+
+class CFProxyTranscriptionSegment(BaseModel):
+    """Segment from Cloudflare Workers AI transcription"""
+    start: float
+    end: float
+    text: str
+    temperature: Optional[float] = None
+    avg_logprob: Optional[float] = None
+    compression_ratio: Optional[float] = None
+    no_speech_prob: Optional[float] = None
+
+class CFProxyTranscriptionRequest(BaseModel):
+    """Request from Cloudflare Whisper Proxy"""
+    session_id: str
+    meeting_id: Optional[str] = None
+    chunk_index: int
+    timestamp: int  # Unix timestamp ms
+    text: str
+    segments: Optional[List[CFProxyTranscriptionSegment]] = None
+    language: Optional[str] = None
+    language_probability: Optional[float] = None
+    duration: Optional[float] = None
+
+@router.post("/transcripts/webhook",
+    summary="Ingest transcription from Cloudflare Whisper Proxy",
+    description="Receives batched transcription results from the Cloudflare Workers AI proxy"
+)
+async def ingest_cf_proxy_transcription(
+    request: CFProxyTranscriptionRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint for Cloudflare Whisper Proxy to submit transcriptions.
+    This processes batch transcription results and stores them.
+    """
+    logger.info(f"[CF-Proxy] Received transcription for session {request.session_id}, chunk {request.chunk_index}")
+    
+    if not request.text or not request.text.strip():
+        logger.debug(f"[CF-Proxy] Empty transcription for chunk {request.chunk_index}, skipping")
+        return {"status": "skipped", "reason": "empty_transcription"}
+    
+    # Try to find meeting by session_id (stored in MeetingSession)
+    meeting = None
+    session = None
+    
+    if request.meeting_id:
+        # Look up meeting by meeting_id from request
+        stmt = select(Meeting).where(Meeting.platform_specific_id == request.meeting_id)
+        result = await db.execute(stmt)
+        meeting = result.scalar_one_or_none()
+    
+    if not meeting:
+        # Try to find by session_uid
+        stmt = select(MeetingSession).where(MeetingSession.session_uid == request.session_id)
+        result = await db.execute(stmt)
+        session = result.scalar_one_or_none()
+        if session:
+            stmt = select(Meeting).where(Meeting.id == session.meeting_id)
+            result = await db.execute(stmt)
+            meeting = result.scalar_one_or_none()
+    
+    if not meeting:
+        logger.warning(f"[CF-Proxy] No meeting found for session {request.session_id}")
+        return {"status": "error", "reason": "meeting_not_found"}
+    
+    # Process segments or full text
+    segments_to_store = []
+    base_timestamp = datetime.fromtimestamp(request.timestamp / 1000, tz=timezone.utc)
+    
+    if request.segments:
+        for seg in request.segments:
+            segments_to_store.append({
+                "start_time": seg.start,
+                "end_time": seg.end,
+                "text": seg.text.strip(),
+                "language": request.language or "en",
+            })
+    else:
+        # Single segment from full text
+        segments_to_store.append({
+            "start_time": 0.0,
+            "end_time": request.duration or 10.0,
+            "text": request.text.strip(),
+            "language": request.language or "en",
+        })
+    
+    # Store transcriptions
+    stored_count = 0
+    for seg_data in segments_to_store:
+        if not seg_data["text"]:
+            continue
+            
+        transcription = Transcription(
+            meeting_id=meeting.id,
+            session_uid=request.session_id,
+            start_time=seg_data["start_time"],
+            end_time=seg_data["end_time"],
+            text=seg_data["text"],
+            language=seg_data["language"],
+            speaker=None,  # CF proxy doesn't provide speaker info
+        )
+        db.add(transcription)
+        stored_count += 1
+    
+    await db.commit()
+    
+    logger.info(f"[CF-Proxy] Stored {stored_count} segments for meeting {meeting.id}")
+    
+    return {
+        "status": "success",
+        "meeting_id": meeting.id,
+        "segments_stored": stored_count,
+        "language": request.language,
+    } 

@@ -1,0 +1,37 @@
+name = "vomeet-whisper-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# R2 bucket for audio storage
+[[r2_buckets]]
+binding = "AUDIO_BUCKET"
+bucket_name = "vomeet-audio"
+
+# Queue for async transcription
+[[queues.producers]]
+queue = "transcription-queue"
+binding = "TRANSCRIPTION_QUEUE"
+
+[[queues.consumers]]
+queue = "transcription-queue"
+max_batch_size = 1
+max_batch_timeout = 30
+
+# AI binding
+[ai]
+binding = "AI"
+
+# Environment variables (non-sensitive)
+[vars]
+# Set VOMEET_WEBHOOK_URL via: wrangler secret put VOMEET_WEBHOOK_URL
+# Example: https://vomeet.io/transcripts/webhook
+
+# Durable Objects for WebSocket state
+[[durable_objects.bindings]]
+name = "WHISPER_SESSION"
+class_name = "WhisperSession"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["WhisperSession"]
