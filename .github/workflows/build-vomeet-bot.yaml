@@ -2,18 +2,9 @@ name: Build vomeet-bot
 
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to build'
-        required: true
-        type: choice
-        options:
-          - production
-          - staging
   push:
     branches:
       - main
-      - develop
     paths:
       - 'services/vomeet-bot/**'
       - '.github/workflows/build-vomeet-bot.yaml'
@@ -50,9 +41,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=production,enable=${{ github.ref_name == 'main' }}
-            type=raw,value=staging,enable=${{ github.ref_name == 'develop' }}
-            type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
+            type=raw,value=latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -66,17 +55,10 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-      # NOTE: Auto-triggering deploy workflows requires a PAT with 'workflow' scope
-      # For now, manually run deploy workflows after build succeeds
       - name: Build complete
         run: |
           echo "✅ Build complete!"
-          echo "To deploy, manually run the deploy workflow:"
-          if [ "${{ github.ref_name }}" == "develop" ]; then
-            echo "  → deploy-vomeet-bot-staging.yaml"
-          elif [ "${{ github.ref_name }}" == "main" ]; then
-            echo "  → deploy-vomeet-bot-prod.yaml"
-          fi
+          echo "To deploy, manually run deploy-vomeet-bot.yaml"
 
   notify-failure:
     runs-on: ubuntu-latest
