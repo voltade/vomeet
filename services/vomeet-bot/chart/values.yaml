@@ -44,14 +44,15 @@ redis:
   enabled: true
 
 # External Secrets configuration
+# Set to true once you've configured the secret references in the templates
 externalSecrets:
-  enabled: true
+  enabled: false
   # OnePassword secret store
   onepassword:
-    enabled: true
+    enabled: false
   # Kubernetes SecretStore
   secretstore:
-    enabled: true
+    enabled: false
 
 # Service account configuration
 serviceAccount:
