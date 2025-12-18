@@ -124,6 +124,92 @@ jobs:
             --wait \
             --timeout 10m
 
+      - name: Run database migrations
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          echo "🔄 Running database migrations..."
+          
+          # Wait for CNPG cluster to be ready
+          echo "Waiting for CNPG cluster..."
+          kubectl wait --for=condition=Ready cluster/vomeet-cnpg -n ${{ env.NAMESPACE }} --timeout=120s || true
+          
+          # Delete any previous migration job
+          kubectl delete job db-migrate -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          
+          # Create migration job
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: db-migrate
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            ttlSecondsAfterFinished: 300
+            backoffLimit: 3
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                - name: migrate
+                  image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-transcription-collector:${TAG}
+                  command:
+                  - sh
+                  - -c
+                  - |
+                    set -e
+                    echo "Checking database state..."
+                    
+                    # Check if alembic_version table exists
+                    if python -c "
+                    import asyncio
+                    from sqlalchemy import text
+                    from shared_models.database import get_engine
+                    async def check():
+                        engine = get_engine()
+                        async with engine.connect() as conn:
+                            result = await conn.execute(text(\"SELECT 1 FROM information_schema.tables WHERE table_name='alembic_version'\"))
+                            return result.scalar() is not None
+                    print('EXISTS' if asyncio.run(check()) else 'EMPTY')
+                    " | grep -q "EXISTS"; then
+                      echo "Database is Alembic-managed, running upgrade..."
+                      alembic -c /app/alembic.ini upgrade head
+                    else
+                      echo "Fresh database, initializing schema..."
+                      python -c "import asyncio; from shared_models.database import init_db; asyncio.run(init_db())"
+                      alembic -c /app/alembic.ini stamp head
+                    fi
+                    echo "✅ Migration complete!"
+                  env:
+                  - name: DB_HOST
+                    value: vomeet-cnpg-rw
+                  - name: DB_PORT
+                    value: "5432"
+                  - name: DB_NAME
+                    value: vomeet
+                  - name: DB_USER
+                    value: vomeet
+                  - name: DB_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: vomeet-db
+                        key: password
+                  - name: REDIS_HOST
+                    value: dragonfly
+                  - name: REDIS_PORT
+                    value: "6379"
+          EOF
+          
+          # Wait for job to complete
+          echo "Waiting for migration job to complete..."
+          kubectl wait --for=condition=complete job/db-migrate -n ${{ env.NAMESPACE }} --timeout=120s
+          
+          # Show logs
+          echo "Migration logs:"
+          kubectl logs job/db-migrate -n ${{ env.NAMESPACE }}
+          
+          echo "✅ Database migrations complete!"
+
       - name: Verify deployment
         run: |
           echo "Checking deployments..."
