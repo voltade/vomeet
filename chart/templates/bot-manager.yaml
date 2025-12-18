@@ -1,0 +1,140 @@
+{{- if index .Values "bot-manager" "enabled" }}
+{{- $svc := "bot-manager" }}
+{{- $config := index .Values $svc }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+spec:
+  replicas: {{ $config.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $config.serviceAccount.create }}
+      serviceAccountName: {{ include "vomeet.fullname" . }}-{{ $svc }}
+      {{- end }}
+      containers:
+        - name: {{ $svc }}
+          image: {{ include "vomeet.image" (dict "root" . "service" $svc) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $config.port }}
+              protocol: TCP
+          env:
+            - name: REDIS_URL
+              value: {{ include "vomeet.redisUrl" . }}
+            - name: DB_HOST
+              value: {{ include "vomeet.databaseHost" . }}
+            - name: DB_PORT
+              value: {{ include "vomeet.databasePort" . | quote }}
+            - name: DB_NAME
+              value: {{ include "vomeet.databaseName" . }}
+            - name: DB_USER
+              value: {{ include "vomeet.databaseUser" . }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-db
+                  key: password
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-secrets
+                  key: admin-api-token
+            # K8s orchestrator config
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: K8S_BOT_IMAGE
+              value: {{ .Values.global.imageRegistry }}/{{ .Values.global.imagePrefix }}-bot:{{ .Values.global.imageTag }}
+            - name: K8S_BOT_SERVICE_ACCOUNT
+              value: {{ include "vomeet.fullname" . }}-bot
+            {{- range $key, $value := $config.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml $config.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $config.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 4 }}
+{{- if $config.serviceAccount.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+{{- if $config.serviceAccount.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- end }}

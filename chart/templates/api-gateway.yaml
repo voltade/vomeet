@@ -1,0 +1,76 @@
+{{- if index .Values "api-gateway" "enabled" }}
+{{- $svc := "api-gateway" }}
+{{- $config := index .Values $svc }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+spec:
+  replicas: {{ $config.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $svc }}
+          image: {{ include "vomeet.image" (dict "root" . "service" $svc) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $config.port }}
+              protocol: TCP
+          env:
+            - name: ADMIN_API_URL
+              value: http://{{ include "vomeet.fullname" . }}-admin-api:8001
+            - name: BOT_MANAGER_URL
+              value: http://{{ include "vomeet.fullname" . }}-bot-manager:8080
+            - name: TRANSCRIPTION_COLLECTOR_URL
+              value: http://{{ include "vomeet.fullname" . }}-transcription-collector:8000
+            - name: REDIS_URL
+              value: {{ include "vomeet.redisUrl" . }}
+            {{- range $key, $value := $config.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml $config.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $config.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 4 }}
+{{- end }}

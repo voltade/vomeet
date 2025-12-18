@@ -1,0 +1,196 @@
+# Global settings
+global:
+  imageRegistry: ghcr.io
+  imagePrefix: voltade/vomeet
+  imageTag: latest
+  imagePullPolicy: IfNotPresent
+
+# Image pull secrets for private registry
+imagePullSecrets: []
+# - name: ghcr-secret
+
+# ============================================================================
+# Services Configuration
+# ============================================================================
+
+api-gateway:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ""  # Uses global.imagePrefix-api-gateway
+    tag: ""         # Uses global.imageTag
+  port: 8000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    LOG_LEVEL: INFO
+
+admin-api:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ""
+    tag: ""
+  port: 8001
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    LOG_LEVEL: INFO
+
+bot-manager:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ""
+    tag: ""
+  port: 8080
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    LOG_LEVEL: INFO
+    ORCHESTRATOR: k8s
+  # ServiceAccount for K8s orchestration
+  serviceAccount:
+    create: true
+    # Extra RBAC for creating/managing bot Jobs
+    rbac:
+      create: true
+
+transcription-collector:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ""
+    tag: ""
+  port: 8000
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    LOG_LEVEL: INFO
+    REDIS_STREAM_NAME: transcription_segments
+    REDIS_CONSUMER_GROUP: collector_group
+    REDIS_STREAM_READ_COUNT: "10"
+    REDIS_STREAM_BLOCK_MS: "2000"
+    BACKGROUND_TASK_INTERVAL: "10"
+    IMMUTABILITY_THRESHOLD: "30"
+    REDIS_SEGMENT_TTL: "3600"
+    REDIS_CLEANUP_THRESHOLD: "86400"
+
+# ============================================================================
+# Database Configuration
+# ============================================================================
+
+# Use external database or deploy PostgreSQL
+postgresql:
+  enabled: true
+  auth:
+    username: vomeet
+    password: ""  # Set via --set or secrets
+    database: vomeet
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+# External database config (when postgresql.enabled=false)
+externalDatabase:
+  host: ""
+  port: 5432
+  database: vomeet
+  username: vomeet
+  password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: password
+
+# ============================================================================
+# Redis Configuration
+# ============================================================================
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+
+# External Redis config (when redis.enabled=false)
+externalRedis:
+  host: ""
+  port: 6379
+  password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: password
+
+# ============================================================================
+# Ingress / Gateway API
+# ============================================================================
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: vomeet.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api-gateway
+  tls: []
+
+# Gateway API HTTPRoute (alternative to ingress)
+httpRoute:
+  enabled: false
+  parentRefs:
+    - name: cloudflare-gateway
+      namespace: cloudflare-gateway
+  hostnames:
+    - vomeet.example.com
+
+# ============================================================================
+# External Secrets
+# ============================================================================
+
+externalSecrets:
+  enabled: false
+  refreshInterval: 1h
+  secretStoreRef:
+    name: ""
+    kind: ClusterSecretStore
+  # Map of secret keys to fetch
+  data: []
+  # - secretKey: DB_PASSWORD
+  #   remoteRef:
+  #     key: vomeet-secrets
+  #     property: db_password
+
+# ============================================================================
+# Monitoring
+# ============================================================================
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s

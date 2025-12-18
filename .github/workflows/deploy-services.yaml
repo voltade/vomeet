@@ -1,0 +1,187 @@
+name: Deploy Services
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: "Image tag to deploy (default: latest)"
+        required: false
+        default: "latest"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/vomeet
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if images exist
+        env:
+          TAG: ${{ inputs.image_tag }}
+        run: |
+          SERVICES="admin-api api-gateway bot-manager transcription-collector"
+          MISSING=""
+          for svc in $SERVICES; do
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${svc}:${TAG}"
+            if ! docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+              MISSING="${MISSING}${svc} "
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing images for tag ${TAG}: ${MISSING}"
+            exit 1
+          fi
+          echo "✅ All images exist for tag ${TAG}"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.32.2'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.16.4'
+
+      - name: Create kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          if [ "${{ inputs.environment }}" == "staging" ]; then
+            cat > ~/.kube/config << EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: ${{ vars.KUBE_CLUSTER_NAME_STAGING }}
+              cluster:
+                server: ${{ vars.KUBE_CLUSTER_URL_STAGING }}
+                certificate-authority-data: ${{ secrets.KUBE_CERTIFICATE_STAGING }}
+          contexts:
+            - name: ${{ vars.KUBE_CLUSTER_NAME_STAGING }}
+              context:
+                cluster: ${{ vars.KUBE_CLUSTER_NAME_STAGING }}
+                namespace: vomeet-staging
+                user: vomeet-admin
+          users:
+            - name: vomeet-admin
+              user:
+                token: ${{ secrets.KUBE_TOKEN_STAGING }}
+          current-context: ${{ vars.KUBE_CLUSTER_NAME_STAGING }}
+          EOF
+          else
+            cat > ~/.kube/config << EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
+              cluster:
+                server: ${{ vars.KUBE_CLUSTER_URL_PROD }}
+                certificate-authority-data: ${{ secrets.KUBE_CERTIFICATE_PROD }}
+          contexts:
+            - name: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
+              context:
+                cluster: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
+                namespace: vomeet
+                user: vomeet-admin
+          users:
+            - name: vomeet-admin
+              user:
+                token: ${{ secrets.KUBE_TOKEN_PROD }}
+          current-context: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
+          EOF
+          fi
+          chmod 600 ~/.kube/config
+
+      - name: Update Helm dependencies
+        run: |
+          helm dependency update ./chart
+
+      - name: Create namespace
+        run: |
+          if [ "${{ inputs.environment }}" == "staging" ]; then
+            NS="vomeet-staging"
+          else
+            NS="vomeet"
+          fi
+          kubectl create namespace $NS --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy Helm chart
+        env:
+          TAG: ${{ inputs.image_tag }}
+        run: |
+          if [ "${{ inputs.environment }}" == "staging" ]; then
+            NS="vomeet-staging"
+            VALUES_FILE="./chart/values.staging.yaml"
+          else
+            NS="vomeet"
+            VALUES_FILE=""
+          fi
+
+          HELM_ARGS="helm upgrade --install vomeet ./chart \
+            --namespace $NS \
+            --set global.imageTag=$TAG \
+            --set postgresql.auth.password=${{ secrets.DB_PASSWORD }} \
+            --set adminApiToken=${{ secrets.ADMIN_API_TOKEN }} \
+            --wait \
+            --timeout 10m"
+
+          if [ -n "$VALUES_FILE" ] && [ -f "$VALUES_FILE" ]; then
+            HELM_ARGS="$HELM_ARGS --values $VALUES_FILE"
+          fi
+
+          eval $HELM_ARGS
+
+      - name: Verify deployment
+        run: |
+          if [ "${{ inputs.environment }}" == "staging" ]; then
+            NS="vomeet-staging"
+          else
+            NS="vomeet"
+          fi
+          echo "Checking deployments..."
+          kubectl get deployments -n $NS
+          echo ""
+          echo "Checking pods..."
+          kubectl get pods -n $NS
+          echo "✅ Deployment verified"
+
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f ~/.kube/config
+
+      - name: Send success notification to Telegram
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d message_thread_id="${{ secrets.TELEGRAM_THREAD_ID }}" \
+            -d text="✅ *[${{ inputs.environment | upper }}] Vomeet Deployed*%0A%0A📦 Services: all%0A🏷️ Image Tag: ${{ inputs.image_tag }}%0A👤 Triggered by: ${{ github.actor }}%0A⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')%0A🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
+            -d parse_mode="Markdown"
+
+      - name: Send failure notification to Telegram
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d message_thread_id="${{ secrets.TELEGRAM_THREAD_ID }}" \
+            -d text="❌ *[${{ inputs.environment | upper }}] Vomeet Deploy Failed*%0A%0A🏷️ Image Tag: ${{ inputs.image_tag }}%0A👤 Triggered by: ${{ github.actor }}%0A⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')%0A🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
+            -d parse_mode="Markdown"

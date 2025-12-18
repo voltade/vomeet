@@ -1,0 +1,90 @@
+{{- if index .Values "transcription-collector" "enabled" }}
+{{- $svc := "transcription-collector" }}
+{{- $config := index .Values $svc }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+spec:
+  replicas: {{ $config.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $svc }}
+          image: {{ include "vomeet.image" (dict "root" . "service" $svc) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $config.port }}
+              protocol: TCP
+          env:
+            - name: DB_HOST
+              value: {{ include "vomeet.databaseHost" . }}
+            - name: DB_PORT
+              value: {{ include "vomeet.databasePort" . | quote }}
+            - name: DB_NAME
+              value: {{ include "vomeet.databaseName" . }}
+            - name: DB_USER
+              value: {{ include "vomeet.databaseUser" . }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-db
+                  key: password
+            - name: REDIS_HOST
+              value: {{ include "vomeet.redisHost" . }}
+            - name: REDIS_PORT
+              value: {{ include "vomeet.redisPort" . | quote }}
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-secrets
+                  key: admin-api-token
+            {{- range $key, $value := $config.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml $config.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" $svc) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $config.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" $svc) | nindent 4 }}
+{{- end }}
