@@ -69,8 +69,8 @@ Get image for a service
 */}}
 {{- define "vomeet.image" -}}
 {{- $svcConfig := index .root.Values .service -}}
-{{- $registry := .root.Values.global.imageRegistry -}}
-{{- $prefix := .root.Values.global.imagePrefix -}}
+{{- $registry := .root.Values.vomeetImages.registry -}}
+{{- $prefix := .root.Values.vomeetImages.prefix -}}
 {{- $tag := default .root.Values.global.imageTag $svcConfig.image.tag -}}
 {{- $repo := default (printf "%s-%s" $prefix .service) $svcConfig.image.repository -}}
 {{- printf "%s/%s:%s" $registry $repo $tag -}}

@@ -1,14 +1,13 @@
 # Global settings
 global:
-  imageRegistry: ghcr.io
-  imagePrefix: voltade/vomeet
+  # Don't set imageRegistry here - it conflicts with bitnami subcharts
   imageTag: latest
   imagePullPolicy: IfNotPresent
-  # For bitnami subcharts - don't use ghcr.io for them
-  postgresql:
-    imageRegistry: docker.io
-  redis:
-    imageRegistry: docker.io
+
+# Vomeet services image config (not using global.imageRegistry to avoid bitnami conflict)
+vomeetImages:
+  registry: ghcr.io
+  prefix: voltade/vomeet
 
 # Image pull secrets for private registry
 imagePullSecrets: []
@@ -108,8 +107,6 @@ transcription-collector:
 # Use external database or deploy PostgreSQL
 postgresql:
   enabled: true
-  image:
-    registry: docker.io
   auth:
     username: vomeet
     password: ""  # Set via --set or secrets
@@ -135,8 +132,6 @@ externalDatabase:
 
 redis:
   enabled: true
-  image:
-    registry: docker.io
   architecture: standalone
   auth:
     enabled: false
