@@ -4,6 +4,11 @@ global:
   imagePrefix: voltade/vomeet
   imageTag: latest
   imagePullPolicy: IfNotPresent
+  # For bitnami subcharts - don't use ghcr.io for them
+  postgresql:
+    imageRegistry: docker.io
+  redis:
+    imageRegistry: docker.io
 
 # Image pull secrets for private registry
 imagePullSecrets: []
@@ -103,9 +108,8 @@ transcription-collector:
 # Use external database or deploy PostgreSQL
 postgresql:
   enabled: true
-  # Override global registry - bitnami images are on docker.io
-  global:
-    imageRegistry: docker.io
+  image:
+    registry: docker.io
   auth:
     username: vomeet
     password: ""  # Set via --set or secrets
@@ -131,9 +135,8 @@ externalDatabase:
 
 redis:
   enabled: true
-  # Override global registry - bitnami images are on docker.io
-  global:
-    imageRegistry: docker.io
+  image:
+    registry: docker.io
   architecture: standalone
   auth:
     enabled: false
