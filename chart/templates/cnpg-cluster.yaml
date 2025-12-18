@@ -1,0 +1,37 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: vomeet-cnpg
+  labels:
+    {{- include "vomeet.labels" . | nindent 4 }}
+spec:
+  imageName: {{ .Values.cnpg.imageName }}
+  instances: {{ .Values.cnpg.instances }}
+
+  storage:
+    size: {{ .Values.cnpg.storage.size }}
+    {{- if .Values.cnpg.storage.storageClass }}
+    storageClass: {{ .Values.cnpg.storage.storageClass }}
+    {{- end }}
+
+  resources:
+    {{- toYaml .Values.cnpg.resources | nindent 4 }}
+
+  managed:
+    roles:
+      - name: {{ .Values.postgresql.username }}
+        ensure: present
+        passwordSecret:
+          name: {{ include "vomeet.fullname" . }}-db
+        login: true
+        superuser: true
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgresql.database }}
+      owner: {{ .Values.postgresql.username }}
+      secret:
+        name: {{ include "vomeet.fullname" . }}-db
+
+  monitoring:
+    enablePodMonitor: false

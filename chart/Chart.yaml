@@ -4,13 +4,3 @@ type: application
 name: vomeet
 version: 1.0.0
 description: Vomeet - Meeting transcription platform
-
-dependencies:
-  - name: redis
-    version: "19.x.x"
-    repository: https://charts.bitnami.com/bitnami
-    condition: redis.enabled
-  - name: postgresql
-    version: "15.x.x"
-    repository: https://charts.bitnami.com/bitnami
-    condition: postgresql.enabled

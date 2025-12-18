@@ -1,17 +1,15 @@
 # Global settings
 global:
-  # Don't set imageRegistry here - it conflicts with bitnami subcharts
   imageTag: latest
   imagePullPolicy: IfNotPresent
 
-# Vomeet services image config (not using global.imageRegistry to avoid bitnami conflict)
+# Vomeet services image config
 vomeetImages:
   registry: ghcr.io
   prefix: voltade/vomeet
 
 # Image pull secrets for private registry
 imagePullSecrets: []
-# - name: ghcr-secret
 
 # ============================================================================
 # Services Configuration
@@ -21,8 +19,8 @@ api-gateway:
   enabled: true
   replicaCount: 2
   image:
-    repository: ""  # Uses global.imagePrefix-api-gateway
-    tag: ""         # Uses global.imageTag
+    repository: ""
+    tag: ""
   port: 8000
   resources:
     requests:
@@ -68,10 +66,8 @@ bot-manager:
   env:
     LOG_LEVEL: INFO
     ORCHESTRATOR: k8s
-  # ServiceAccount for K8s orchestration
   serviceAccount:
     create: true
-    # Extra RBAC for creating/managing bot Jobs
     rbac:
       create: true
 
@@ -101,52 +97,40 @@ transcription-collector:
     REDIS_CLEANUP_THRESHOLD: "86400"
 
 # ============================================================================
-# Database Configuration
+# CloudNativePG (CNPG) PostgreSQL
 # ============================================================================
 
-# Use external database or deploy PostgreSQL
 postgresql:
-  enabled: true
-  auth:
-    username: vomeet
-    password: ""  # Set via --set or secrets
-    database: vomeet
-  primary:
-    persistence:
-      enabled: true
-      size: 10Gi
-
-# External database config (when postgresql.enabled=false)
-externalDatabase:
-  host: ""
-  port: 5432
   database: vomeet
   username: vomeet
-  password: ""
-  existingSecret: ""
-  existingSecretPasswordKey: password
+  password: ""  # Set via --set or secrets
+
+cnpg:
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.4-standard-bookworm
+  instances: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  storage:
+    storageClass: local-path
+    size: 10Gi
 
 # ============================================================================
-# Redis Configuration
+# Dragonfly (Redis replacement)
 # ============================================================================
 
-redis:
-  enabled: true
-  architecture: standalone
-  auth:
-    enabled: false
-  master:
-    persistence:
-      enabled: true
-      size: 5Gi
-
-# External Redis config (when redis.enabled=false)
-externalRedis:
-  host: ""
-  port: 6379
-  password: ""
-  existingSecret: ""
-  existingSecretPasswordKey: password
+dragonfly:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 512Mi
 
 # ============================================================================
 # Ingress / Gateway API
@@ -164,7 +148,6 @@ ingress:
           service: api-gateway
   tls: []
 
-# Gateway API HTTPRoute (alternative to ingress)
 httpRoute:
   enabled: false
   parentRefs:
@@ -183,18 +166,10 @@ externalSecrets:
   secretStoreRef:
     name: ""
     kind: ClusterSecretStore
-  # Map of secret keys to fetch
   data: []
-  # - secretKey: DB_PASSWORD
-  #   remoteRef:
-  #     key: vomeet-secrets
-  #     property: db_password
 
 # ============================================================================
-# Monitoring
+# Secrets
 # ============================================================================
 
-serviceMonitor:
-  enabled: false
-  interval: 30s
-  scrapeTimeout: 10s
+adminApiToken: ""  # Set via --set

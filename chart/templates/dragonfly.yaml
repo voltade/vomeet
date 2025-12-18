@@ -1,0 +1,14 @@
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: dragonfly
+  labels:
+    app.kubernetes.io/part-of: dragonfly-operator
+    app.kubernetes.io/created-by: dragonfly-operator
+    {{- include "vomeet.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  {{- with .Values.dragonfly.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}

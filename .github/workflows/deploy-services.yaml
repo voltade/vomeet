@@ -119,7 +119,7 @@ jobs:
           helm upgrade --install vomeet ./chart \
             --namespace ${{ env.NAMESPACE }} \
             --set global.imageTag="$TAG" \
-            --set postgresql.auth.password="$DB_PASSWORD" \
+            --set postgresql.password="$DB_PASSWORD" \
             --set adminApiToken="$ADMIN_API_TOKEN" \
             --wait \
             --timeout 10m

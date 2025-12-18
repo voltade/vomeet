@@ -77,59 +77,35 @@ Get image for a service
 {{- end }}
 
 {{/*
-Database URL
+Database helpers (CNPG)
 */}}
 {{- define "vomeet.databaseHost" -}}
-{{- if .Values.postgresql.enabled -}}
-{{- printf "%s-postgresql" (include "vomeet.fullname" .) -}}
-{{- else -}}
-{{- .Values.externalDatabase.host -}}
-{{- end -}}
+{{- printf "%s-rw" "vomeet-cnpg" -}}
 {{- end }}
 
 {{- define "vomeet.databasePort" -}}
-{{- if .Values.postgresql.enabled -}}
 5432
-{{- else -}}
-{{- .Values.externalDatabase.port -}}
-{{- end -}}
 {{- end }}
 
 {{- define "vomeet.databaseName" -}}
-{{- if .Values.postgresql.enabled -}}
-{{- .Values.postgresql.auth.database -}}
-{{- else -}}
-{{- .Values.externalDatabase.database -}}
-{{- end -}}
+{{- .Values.postgresql.database -}}
 {{- end }}
 
 {{- define "vomeet.databaseUser" -}}
-{{- if .Values.postgresql.enabled -}}
-{{- .Values.postgresql.auth.username -}}
-{{- else -}}
-{{- .Values.externalDatabase.username -}}
-{{- end -}}
+{{- .Values.postgresql.username -}}
 {{- end }}
 
 {{/*
-Redis URL
+Redis helpers (Dragonfly)
 */}}
 {{- define "vomeet.redisHost" -}}
-{{- if .Values.redis.enabled -}}
-{{- printf "%s-redis-master" (include "vomeet.fullname" .) -}}
-{{- else -}}
-{{- .Values.externalRedis.host -}}
-{{- end -}}
+{{- "dragonfly" -}}
 {{- end }}
 
 {{- define "vomeet.redisPort" -}}
-{{- if .Values.redis.enabled -}}
 6379
-{{- else -}}
-{{- .Values.externalRedis.port -}}
-{{- end -}}
 {{- end }}
 
 {{- define "vomeet.redisUrl" -}}
-{{- printf "redis://%s:%s/0" (include "vomeet.redisHost" .) (include "vomeet.redisPort" . | toString) -}}
+{{- printf "redis://%s:%s/0" (include "vomeet.redisHost" .) (include "vomeet.redisPort" .) -}}
 {{- end }}
