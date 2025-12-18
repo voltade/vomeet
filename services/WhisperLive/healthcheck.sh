@@ -5,4 +5,4 @@ set -e
 HEALTH_PORT=9091
 
 # Using curl to check health endpoint
-curl -sf "http://localhost:${HEALTH_PORT}/health" > /dev/null 
+curl -sf "http://localhost:${HEALTH_PORT}/healthz" > /dev/null 

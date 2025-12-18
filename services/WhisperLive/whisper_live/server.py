@@ -1103,7 +1103,7 @@ class TranscriptionServer:
             port
         ) as server:
             self.is_healthy = True # WebSocket server is up
-            logger.info(f"SERVER_RUNNING: WhisperLive server running on {host}:{port} with health check on {host}:9091/health and max_clients={self.config_max_clients}")
+            logger.info(f"SERVER_RUNNING: WhisperLive server running on {host}:{port} with health check on {host}:9091/healthz and max_clients={self.config_max_clients}")
             
             # Server started successfully
             logging.info(f"WhisperLive server started successfully on {host}:{port}")
@@ -1397,7 +1397,7 @@ class TranscriptionServer:
                     else: # redis_collector exists but its redis_client is None
                         redis_ping_error = "redis_collector.redis_client is None (implies not connected or error in worker)"
                 
-                if self.path == '/health':
+                if self.path == '/healthz' or self.path == '/health':
                     if server_websocket_healthy and redis_healthy:
                         self.send_response(200)
                         self.send_header('Content-type', 'text/plain')
