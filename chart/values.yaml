@@ -1,7 +1,7 @@
 # Global settings
 global:
   imageTag: latest
-  imagePullPolicy: IfNotPresent
+  imagePullPolicy: Always
 
 # Vomeet services image config
 vomeetImages:
