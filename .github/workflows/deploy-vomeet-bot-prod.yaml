@@ -74,6 +74,7 @@ jobs:
                 token: ${{ secrets.KUBE_TOKEN_PROD }}
           current-context: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
           EOF
+          chmod 600 ~/.kube/config
 
       - name: Create namespace if not exists
         run: |
