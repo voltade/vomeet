@@ -1,0 +1,28 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "vomeet-bot.fullname" . }}
+  labels:
+    {{- include "vomeet-bot.labels" . | nindent 4 }}
+rules:
+  # Allow bots to read their own configmaps/secrets if needed
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "vomeet-bot.fullname" . }}
+  labels:
+    {{- include "vomeet-bot.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "vomeet-bot.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "vomeet-bot.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

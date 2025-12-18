@@ -1,0 +1,101 @@
+name: Build vomeet-bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to build'
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'services/vomeet-bot/**'
+      - '.github/workflows/build-vomeet-bot.yaml'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/vomeet-bot
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=production,enable=${{ github.ref_name == 'main' }}
+            type=raw,value=staging,enable=${{ github.ref_name == 'develop' }}
+            type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/vomeet-bot/core
+          file: ./services/vomeet-bot/core/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Trigger staging deployment
+        if: github.ref_name == 'develop' && success()
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy-vomeet-bot-staging.yaml/dispatches \
+            -d '{"ref":"develop"}'
+          echo "✅ Triggered staging deployment workflow"
+
+      - name: Trigger production deployment
+        if: github.ref_name == 'main' && success()
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy-vomeet-bot-prod.yaml/dispatches \
+            -d '{"ref":"main"}'
+          echo "✅ Triggered production deployment workflow"
+
+  notify-failure:
+    runs-on: ubuntu-latest
+    needs: build
+    if: failure()
+    steps:
+      - name: Send failure notification
+        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d message_thread_id="${{ secrets.TELEGRAM_THREAD_ID }}" \
+            -d text="❌ *vomeet-bot Build Failed*%0A%0A📦 Repository: ${{ github.repository }}%0A🔀 Branch: ${{ github.ref_name }}%0A👤 Triggered by: ${{ github.actor }}%0A⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')%0A🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
+            -d parse_mode="Markdown"

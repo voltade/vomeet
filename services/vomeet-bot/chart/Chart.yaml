@@ -1,0 +1,6 @@
+apiVersion: v2
+type: application
+
+name: vomeet-bot
+version: 1.0.0
+description: Kubernetes Helm chart for vomeet-bot ephemeral meeting bot instances

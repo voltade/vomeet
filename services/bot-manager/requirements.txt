@@ -27,4 +27,5 @@ aiosqlite # If using sqlite async (often for testing)
 requests
 httpx
 psycopg2-binary
-aiodocker 
+aiodocker
+kubernetes>=28.0.0  # For Kubernetes orchestrator (k8s.py) 

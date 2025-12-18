@@ -1,0 +1,95 @@
+{{- /*
+  This is a reference Job template. In practice, bot-manager will create Jobs
+  dynamically via the Kubernetes API using this structure.
+  
+  The bot-manager's Kubernetes orchestrator will:
+  1. Create a Job with a unique name (e.g., vomeet-bot-{meeting_id}-{uuid})
+  2. Set BOT_CONFIG env var with the meeting configuration
+  3. Use the image and resources defined in values.yaml
+*/}}
+{{- if false -}}  {{- /* This template is for reference only, not rendered by default */ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "vomeet-bot-%s" .jobName | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "vomeet-bot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bot-instance
+    meeting-id: {{ .meetingId | quote }}
+    user-id: {{ .userId | quote }}
+  annotations:
+    # Allow job to be cleaned up after completion
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+spec:
+  activeDeadlineSeconds: {{ .Values.bot.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.bot.ttlSecondsAfterFinished }}
+  backoffLimit: 0  # Don't retry failed bots
+  template:
+    metadata:
+      labels:
+        {{- include "vomeet-bot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bot-instance
+        meeting-id: {{ .meetingId | quote }}
+        user-id: {{ .userId | quote }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: {{ .Values.bot.restartPolicy }}
+      serviceAccountName: {{ include "vomeet-bot.serviceAccountName" . }}
+      {{- with .Values.bot.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bot.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bot.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vomeet-bot
+          image: {{ printf "%s:%s" .Values.imageRepository .Values.imageTag | quote }}
+          imagePullPolicy: Always
+          resources:
+            {{- toYaml .Values.bot.resources | nindent 12 }}
+          env:
+            # BOT_CONFIG is the primary configuration passed as JSON
+            - name: BOT_CONFIG
+              value: {{ .botConfig | quote }}
+            # Additional environment variables from values
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          envFrom:
+            {{- if .Values.externalSecrets.enabled }}
+            - secretRef:
+                name: envs-from-onepassword
+            - secretRef:
+                name: envs-from-secretstore
+            {{- end }}
+          # Security context for Playwright (needs some capabilities)
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+            capabilities:
+              add:
+                - SYS_ADMIN  # Required for Chrome sandbox
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: storage
+              mountPath: /app/storage
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: storage
+          emptyDir: {}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+{{- end }}

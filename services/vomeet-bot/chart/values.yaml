@@ -1,0 +1,67 @@
+# Default values for vomeet-bot
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+nameOverride: ''
+fullnameOverride: ''
+
+imagePullSecrets:
+  - name: image-pull-secrets
+
+imageTag: latest
+imageRepository: ghcr.io/voltade/vomeet-bot
+
+podSecurityContext: {}
+securityContext: {}
+
+# Bot job configuration
+bot:
+  # Resource requests/limits for each bot instance
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+  # Active deadline seconds - max time a bot can run (default 2 hours)
+  activeDeadlineSeconds: 7200
+  # TTL after completion (cleanup completed jobs)
+  ttlSecondsAfterFinished: 300
+  # Restart policy
+  restartPolicy: Never
+  # Node selector for dedicated nodes (optional)
+  nodeSelector: {}
+  # Tolerations for dedicated nodes (optional)
+  tolerations: []
+  # Affinity rules (optional)
+  affinity: {}
+
+# Redis configuration (for command/control)
+redis:
+  # Redis URL will come from secrets
+  # This is just for reference
+  enabled: true
+
+# External Secrets configuration
+externalSecrets:
+  enabled: true
+  # OnePassword secret store
+  onepassword:
+    enabled: true
+  # Kubernetes SecretStore
+  secretstore:
+    enabled: true
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Environment variables (additional to those from secrets)
+env: {}

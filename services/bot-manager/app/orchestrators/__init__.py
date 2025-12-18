@@ -5,7 +5,12 @@ import logging
 logger = logging.getLogger("bot_manager.orchestrator_loader")
 
 _orchestrator = os.getenv("ORCHESTRATOR", "docker").lower()
-module_name = "app.orchestrators.nomad" if _orchestrator == "nomad" else "app.orchestrators.docker"
+if _orchestrator == "nomad":
+    module_name = "app.orchestrators.nomad"
+elif _orchestrator == "k8s" or _orchestrator == "kubernetes":
+    module_name = "app.orchestrators.k8s"
+else:
+    module_name = "app.orchestrators.docker"
 logger.info(f"Using '{_orchestrator}' orchestrator module: {module_name}")
 
 # Dynamically import the concrete module
