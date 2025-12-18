@@ -25,10 +25,20 @@ spec:
       {{- if $config.serviceAccount.create }}
       serviceAccountName: {{ include "vomeet.fullname" . }}-{{ $svc }}
       {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: {{ $svc }}
           image: {{ include "vomeet.image" (dict "root" . "service" $svc) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
           ports:
             - name: http
               containerPort: {{ $config.port }}
