@@ -26,11 +26,8 @@ COPY . .
 # Build the TypeScript code and browser utilities bundle
 RUN npm run build
 
-# Install Playwright dependencies (if not already installed via npm)
-RUN npx playwright install-deps && npx playwright install --with-deps
-
-# Install MS Edge for Teams support
-RUN npx playwright install msedge
+# Install Playwright dependencies/browsers (avoid msedge on arm64)
+RUN npx playwright install-deps && npx playwright install --with-deps chromium firefox webkit
 
 # --- Runtime Stage ---
 FROM mcr.microsoft.com/playwright:v1.56.0-jammy AS runtime
@@ -48,8 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the built application and node_modules from the base stage
 COPY --from=base /app /app
 
-# Install MS Edge in runtime stage as well
-RUN npx playwright install msedge
+# Browsers already installed in build stage; ensure cache permissions
 
 # Ensure the Playwright cache directory has proper permissions (adjust path if needed)
 RUN mkdir -p /root/ms-playwright && chmod -R 777 /root/ms-playwright
