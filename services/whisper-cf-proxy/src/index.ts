@@ -180,14 +180,7 @@ export default {
       return stub.fetch(request);
     }
 
-    // Manual transcription trigger (for testing)
-    if (url.pathname === "/transcribe" && request.method === "POST") {
-      const { audioKey } = await request.json() as { audioKey: string };
-      const result = await transcribeAudio(env, audioKey);
-      return Response.json(result);
-    }
-
-    return new Response("Vomeet Whisper Proxy\n\nEndpoints:\n- GET /ws - WebSocket connection\n- GET /healthz - Health check\n- POST /transcribe - Manual transcription", { 
+    return new Response("Vomeet Whisper Proxy\n\nEndpoints:\n- GET /ws - WebSocket connection\n- GET /healthz - Health check", { 
       status: 200,
       headers: { "Content-Type": "text/plain" }
     });
