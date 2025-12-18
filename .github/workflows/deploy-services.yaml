@@ -64,21 +64,21 @@ jobs:
           apiVersion: v1
           kind: Config
           clusters:
-            - name: ${{ vars.KUBE_CLUSTER_NAME }}
+            - name: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
               cluster:
-                server: ${{ vars.KUBE_CLUSTER_URL }}
-                certificate-authority-data: ${{ secrets.KUBE_CERTIFICATE }}
+                server: ${{ vars.KUBE_CLUSTER_URL_PROD }}
+                certificate-authority-data: ${{ secrets.KUBE_CERTIFICATE_PROD }}
           contexts:
-            - name: ${{ vars.KUBE_CLUSTER_NAME }}
+            - name: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
               context:
-                cluster: ${{ vars.KUBE_CLUSTER_NAME }}
+                cluster: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
                 namespace: ${{ env.NAMESPACE }}
                 user: vomeet-admin
           users:
             - name: vomeet-admin
               user:
-                token: ${{ secrets.KUBE_TOKEN }}
-          current-context: ${{ vars.KUBE_CLUSTER_NAME }}
+                token: ${{ secrets.KUBE_TOKEN_PROD }}
+          current-context: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
           EOF
           chmod 600 ~/.kube/config
 
