@@ -96,8 +96,8 @@ jobs:
         if: always()
         run: rm -f ~/.kube/config
 
-      - name: Send success notification
-        if: success() && secrets.TELEGRAM_BOT_TOKEN != ''
+      - name: Send success notification to Telegram
+        if: success()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
@@ -105,8 +105,8 @@ jobs:
             -d text="✅ *[STAGING] vomeet-bot Deployed*%0A%0A📦 Namespace: ${{ env.NAMESPACE }}%0A🔀 Branch: ${{ github.ref_name }}%0A👤 Triggered by: ${{ github.actor }}%0A⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')%0A🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
             -d parse_mode="Markdown"
 
-      - name: Send failure notification
-        if: failure() && secrets.TELEGRAM_BOT_TOKEN != ''
+      - name: Send failure notification to Telegram
+        if: failure()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
