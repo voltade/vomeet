@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, Header
 from pydantic import BaseModel
 from sqlalchemy import select, and_, func, distinct, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,7 @@ from shared_models.schemas import (
 from config import IMMUTABILITY_THRESHOLD
 from filters import TranscriptionFilter
 from api.auth import get_current_user
+from streaming.processors import verify_meeting_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -582,12 +583,30 @@ class CFProxyTranscriptionRequest(BaseModel):
 )
 async def ingest_cf_proxy_transcription(
     request: CFProxyTranscriptionRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    authorization: Optional[str] = Header(None)
 ):
     """
     Endpoint for Cloudflare Whisper Proxy to submit transcriptions.
     This processes batch transcription results and stores them.
+    Requires a valid MeetingToken in the Authorization header.
     """
+    # Verify MeetingToken from Authorization header
+    if not authorization or not authorization.startswith("Bearer "):
+        logger.warning(f"[CF-Proxy] Missing or invalid Authorization header for session {request.session_id}")
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    token = authorization[7:]  # Remove "Bearer " prefix
+    claims = verify_meeting_token(token)
+    if not claims:
+        logger.warning(f"[CF-Proxy] Invalid MeetingToken for session {request.session_id}")
+        raise HTTPException(status_code=401, detail="Invalid or expired MeetingToken")
+    
+    # Verify meeting_id in request matches token claims
+    if request.meeting_id and claims.get("meeting_id") != request.meeting_id:
+        logger.warning(f"[CF-Proxy] Meeting ID mismatch: request={request.meeting_id}, token={claims.get('meeting_id')}")
+        raise HTTPException(status_code=403, detail="Meeting ID mismatch")
+    
     logger.info(f"[CF-Proxy] Received transcription for session {request.session_id}, chunk {request.chunk_index}")
     
     if not request.text or not request.text.strip():

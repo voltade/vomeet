@@ -32,6 +32,7 @@ interface WebhookJob {
   type: "webhook";
   sessionId: string;
   meetingId?: number;
+  token?: string;
   chunkIndex: number;
   timestamp: number;
   text: string;
@@ -243,6 +244,7 @@ async function processTranscriptionJob(env: Env, job: TranscriptionJob): Promise
       type: "webhook",
       sessionId: job.sessionId,
       meetingId: job.config.meeting_id,
+      token: job.config.token,
       chunkIndex: job.chunkIndex,
       timestamp: job.timestamp,
       text: result.text,
@@ -279,6 +281,7 @@ async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(job.token && { "Authorization": `Bearer ${job.token}` }),
     },
     body: JSON.stringify(payload),
   });
