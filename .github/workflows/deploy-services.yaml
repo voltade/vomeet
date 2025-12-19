@@ -165,17 +165,16 @@ jobs:
                     set -e
                     echo "Checking database state..."
                     
-                    # Check if alembic_version table exists
+                    # Check if alembic_version table exists (using sync engine)
                     if python -c "
-                    import asyncio
                     from sqlalchemy import text
                     from shared_models.database import get_engine
-                    async def check():
+                    def check():
                         engine = get_engine()
-                        async with engine.connect() as conn:
-                            result = await conn.execute(text(\"SELECT 1 FROM information_schema.tables WHERE table_name='alembic_version'\"))
+                        with engine.connect() as conn:
+                            result = conn.execute(text(\"SELECT 1 FROM information_schema.tables WHERE table_name='alembic_version'\"))
                             return result.scalar() is not None
-                    print('EXISTS' if asyncio.run(check()) else 'EMPTY')
+                    print('EXISTS' if check() else 'EMPTY')
                     " | grep -q "EXISTS"; then
                       echo "Database is Alembic-managed, running upgrade..."
                       alembic -c /app/alembic.ini upgrade head
