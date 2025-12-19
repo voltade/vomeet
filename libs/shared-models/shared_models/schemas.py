@@ -53,6 +53,7 @@ class MeetingStatus(str, Enum):
     STOPPING = "stopping"
     COMPLETED = "completed"
     FAILED = "failed"
+    ERROR = "error"  # Legacy status, treat as FAILED
 
 class MeetingCompletionReason(str, Enum):
     """
@@ -113,6 +114,7 @@ def get_valid_status_transitions() -> Dict[MeetingStatus, List[MeetingStatus]]:
         ],
         MeetingStatus.COMPLETED: [],  # Terminal state
         MeetingStatus.FAILED: [],  # Terminal state
+        MeetingStatus.ERROR: [],  # Terminal state (legacy)
     }
 
 def is_valid_status_transition(from_status: MeetingStatus, to_status: MeetingStatus) -> bool:

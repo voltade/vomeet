@@ -111,7 +111,7 @@ export class WhisperLiveService {
 			use_vad: false,
 			platform: botConfig.platform,
 			token: botConfig.token, // MeetingToken (HS256 JWT)
-			meeting_id: botConfig.meeting_id,
+			meeting_id: botConfig.nativeMeetingId, // Native meeting ID (e.g., cgc-ctcj-vxk) for CF proxy lookup
 			meeting_url: botConfig.meetingUrl || null,
 		};
 
