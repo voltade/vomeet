@@ -121,6 +121,10 @@ jobs:
             --set global.imageTag="$TAG" \
             --set postgresql.password="$DB_PASSWORD" \
             --set adminApiToken="$ADMIN_API_TOKEN" \
+            --set httpRoute.enabled=true \
+            --set "httpRoute.hostnames[0]=vomeet.voltade.com" \
+            --set "httpRoute.parentRefs[0].name=cloudflare-https" \
+            --set "httpRoute.parentRefs[0].namespace=gateway" \
             --wait \
             --timeout 10m
 
