@@ -151,10 +151,10 @@ ingress:
 httpRoute:
   enabled: false
   parentRefs:
-    - name: cloudflare-gateway
-      namespace: cloudflare-gateway
+    - name: cloudflare-https
+      namespace: gateway
   hostnames:
-    - vomeet.example.com
+    - vomeet.voltade.com
 
 # ============================================================================
 # External Secrets
