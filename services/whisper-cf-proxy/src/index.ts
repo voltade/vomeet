@@ -5,6 +5,7 @@ export interface Env {
   AI: Ai;
   AUDIO_BUCKET: R2Bucket;
   TRANSCRIPTION_QUEUE: Queue;
+  WEBHOOK_QUEUE: Queue;
   WHISPER_SESSION: DurableObjectNamespace;
   VOMEET_WEBHOOK_URL?: string;  // Set via wrangler secret put VOMEET_WEBHOOK_URL
 }
@@ -19,12 +20,28 @@ interface SessionConfig {
 }
 
 interface TranscriptionJob {
+  type: "transcription";
   sessionId: string;
   audioKey: string;
   config: SessionConfig;
   chunkIndex: number;
   timestamp: number;
 }
+
+interface WebhookJob {
+  type: "webhook";
+  sessionId: string;
+  meetingId?: string;
+  chunkIndex: number;
+  timestamp: number;
+  text: string;
+  segments?: Array<{ start: number; end: number; text: string }>;
+  language?: string;
+  languageProbability?: number;
+  duration?: number;
+}
+
+type QueueJob = TranscriptionJob | WebhookJob;
 
 // Durable Object for managing WebSocket sessions
 export class WhisperSession extends DurableObject {
@@ -140,6 +157,7 @@ export class WhisperSession extends DurableObject {
 
     // Queue transcription job
     const job: TranscriptionJob = {
+      type: "transcription",
       sessionId,
       audioKey,
       config: this.config,
@@ -186,30 +204,92 @@ export default {
     });
   },
 
-  // Queue consumer
-  async queue(batch: MessageBatch<TranscriptionJob>, env: Env): Promise<void> {
+  // Queue consumer - handles both transcription and webhook jobs
+  async queue(batch: MessageBatch<QueueJob>, env: Env): Promise<void> {
     for (const message of batch.messages) {
       const job = message.body;
-      console.log(`[Queue] Processing transcription job: ${job.audioKey}`);
       
       try {
-        const result = await transcribeAudio(env, job.audioKey);
-        
-        // Send to transcription collector (if configured)
-        if (result.text && env.VOMEET_WEBHOOK_URL) {
-          await sendToCollector(env, job, result);
-        } else if (result.text) {
-          console.log(`[Queue] Transcription complete (no collector configured): ${result.text.substring(0, 100)}...`);
+        if (job.type === "webhook") {
+          await processWebhookJob(env, job);
+        } else {
+          await processTranscriptionJob(env, job);
         }
-        
         message.ack();
       } catch (error) {
-        console.error(`[Queue] Error processing ${job.audioKey}:`, error);
+        console.error(`[Queue] Error processing ${job.type} job:`, error);
         message.retry();
       }
     }
   },
 };
+
+// Process transcription job - transcribe audio and queue webhook
+async function processTranscriptionJob(env: Env, job: TranscriptionJob): Promise<void> {
+  console.log(`[Queue] Processing transcription job: ${job.audioKey}`);
+  
+  const result = await transcribeAudio(env, job.audioKey);
+  
+  // Queue webhook delivery as separate job (if configured and has text)
+  if (result.text && env.VOMEET_WEBHOOK_URL) {
+    // Map segments to ensure required fields
+    const mappedSegments = result.segments?.map(seg => ({
+      start: seg.start ?? 0,
+      end: seg.end ?? 0,
+      text: seg.text ?? "",
+    }));
+
+    const webhookJob: WebhookJob = {
+      type: "webhook",
+      sessionId: job.sessionId,
+      meetingId: job.config.meeting_id,
+      chunkIndex: job.chunkIndex,
+      timestamp: job.timestamp,
+      text: result.text,
+      segments: mappedSegments,
+      language: result.transcription_info?.language,
+      languageProbability: result.transcription_info?.language_probability,
+      duration: result.transcription_info?.duration,
+    };
+    
+    await env.WEBHOOK_QUEUE.send(webhookJob);
+    console.log(`[Queue] Queued webhook job for chunk ${job.chunkIndex}`);
+  } else if (result.text) {
+    console.log(`[Queue] Transcription complete (no collector configured): ${result.text.substring(0, 100)}...`);
+  }
+}
+
+// Process webhook job - send to collector with retry
+async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
+  console.log(`[Webhook] Delivering chunk ${job.chunkIndex} to collector`);
+  
+  const payload = {
+    session_id: job.sessionId,
+    meeting_id: job.meetingId,
+    chunk_index: job.chunkIndex,
+    timestamp: job.timestamp,
+    text: job.text,
+    segments: job.segments,
+    language: job.language,
+    language_probability: job.languageProbability,
+    duration: job.duration,
+  };
+
+  const response = await fetch(env.VOMEET_WEBHOOK_URL!, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Collector responded with ${response.status}: ${body.substring(0, 200)}`);
+  }
+  
+  console.log(`[Webhook] Successfully delivered chunk ${job.chunkIndex}`);
+}
 
 // Transcribe audio from R2 using Cloudflare AI
 async function transcribeAudio(env: Env, audioKey: string): Promise<Ai_Cf_Openai_Whisper_Large_V3_Turbo_Output> {
@@ -243,37 +323,6 @@ async function transcribeAudio(env: Env, audioKey: string): Promise<Ai_Cf_Openai
   console.log(`[Transcribe] Result: ${result.text?.substring(0, 100)}...`);
   
   return result;
-}
-
-// Send transcription to collector service
-async function sendToCollector(
-  env: Env, 
-  job: TranscriptionJob, 
-  result: Ai_Cf_Openai_Whisper_Large_V3_Turbo_Output
-): Promise<void> {
-  const payload = {
-    session_id: job.sessionId,
-    meeting_id: job.config.meeting_id,
-    chunk_index: job.chunkIndex,
-    timestamp: job.timestamp,
-    text: result.text,
-    segments: result.segments,
-    language: result.transcription_info?.language,
-    language_probability: result.transcription_info?.language_probability,
-    duration: result.transcription_info?.duration,
-  };
-
-  const response = await fetch(env.VOMEET_WEBHOOK_URL!, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Collector responded with ${response.status}`);
-  }
 }
 
 // Helper: Convert Float32 PCM to WAV

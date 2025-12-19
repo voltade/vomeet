@@ -17,6 +17,19 @@ binding = "TRANSCRIPTION_QUEUE"
 queue = "transcription-queue"
 max_batch_size = 1
 max_batch_timeout = 30
+max_retries = 3
+
+# Queue for webhook delivery (separate from transcription)
+[[queues.producers]]
+queue = "webhook-queue"
+binding = "WEBHOOK_QUEUE"
+
+[[queues.consumers]]
+queue = "webhook-queue"
+max_batch_size = 5
+max_batch_timeout = 10
+max_retries = 10
+dead_letter_queue = "webhook-dlq"
 
 # AI binding
 [ai]
