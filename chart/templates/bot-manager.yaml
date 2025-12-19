@@ -71,6 +71,8 @@ spec:
               value: {{ .Values.vomeetImages.registry }}/{{ .Values.vomeetImages.prefix }}-bot:{{ .Values.global.imageTag }}
             - name: K8S_BOT_SERVICE_ACCOUNT
               value: {{ include "vomeet.fullname" . }}-bot
+            - name: K8S_BOT_MANAGER_CALLBACK_URL
+              value: http://{{ include "vomeet.fullname" . }}-bot-manager:{{ $config.port }}/bots/internal/callback/exited
             {{- range $key, $value := $config.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
