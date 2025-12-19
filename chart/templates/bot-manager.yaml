@@ -73,6 +73,8 @@ spec:
               value: {{ include "vomeet.fullname" . }}-bot
             - name: K8S_BOT_MANAGER_CALLBACK_URL
               value: http://{{ include "vomeet.fullname" . }}-bot-manager:{{ $config.port }}/bots/internal/callback/exited
+            - name: WHISPER_LIVE_URL
+              value: {{ $config.whisperLiveUrl | default "wss://vomeet-whisper-proxy.voltade.workers.dev/ws" | quote }}
             {{- range $key, $value := $config.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}

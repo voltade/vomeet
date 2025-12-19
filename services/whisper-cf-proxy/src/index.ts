@@ -71,10 +71,10 @@ export class WhisperSession extends DurableObject {
         const data = JSON.parse(message);
         if (data.uid) {
           this.config = data as SessionConfig;
-          // Send server ready response
+          // Send server ready response (matching WhisperLive protocol)
           ws.send(JSON.stringify({
             uid: data.uid,
-            status: "READY",
+            status: "SERVER_READY",
             message: "Cloudflare Whisper Proxy ready"
           }));
           console.log(`[WhisperSession] Config received for ${data.uid}`);

@@ -27,7 +27,7 @@ K8S_IMAGE_REPOSITORY = os.getenv("K8S_BOT_IMAGE_REPOSITORY", "ghcr.io/voltade/vo
 K8S_IMAGE_TAG = os.getenv("K8S_BOT_IMAGE_TAG", "latest")
 K8S_SERVICE_ACCOUNT = os.getenv("K8S_SERVICE_ACCOUNT", "vomeet-bot")
 K8S_REDIS_URL = os.getenv("REDIS_URL")  # Required for bot config
-K8S_WHISPER_LIVE_URL = os.getenv("WHISPER_LIVE_URL", "ws://whisperlive:8000/ws")
+K8S_WHISPER_LIVE_URL = os.getenv("WHISPER_LIVE_URL", "wss://vomeet-whisper-proxy.voltade.workers.dev/ws")
 K8S_BOT_MANAGER_CALLBACK_URL = os.getenv("K8S_BOT_MANAGER_CALLBACK_URL", "http://vomeet-bot-manager:8080/bots/internal/callback/exited")
 
 # Resource limits (can be overridden via env)
@@ -200,6 +200,10 @@ async def start_bot_container(
                                 {
                                     "name": "BOT_CONFIG",
                                     "value": bot_config_json
+                                },
+                                {
+                                    "name": "WHISPER_LIVE_URL",
+                                    "value": K8S_WHISPER_LIVE_URL
                                 }
                             ],
                             "securityContext": {
