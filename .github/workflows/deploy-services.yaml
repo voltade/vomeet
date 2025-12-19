@@ -123,6 +123,7 @@ jobs:
             --set adminApiToken="$ADMIN_API_TOKEN" \
             --set httpRoute.enabled=true \
             --set "httpRoute.hostnames[0]=vomeet.voltade.com" \
+            --set "httpRoute.hostnames[1]=vomeet.io" \
             --set "httpRoute.parentRefs[0].name=cloudflare-https" \
             --set "httpRoute.parentRefs[0].namespace=gateway" \
             --wait \
