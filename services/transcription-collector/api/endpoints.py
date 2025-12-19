@@ -599,8 +599,11 @@ async def ingest_cf_proxy_transcription(
     session = None
     
     if request.meeting_id:
-        # Look up meeting by meeting_id from request
-        stmt = select(Meeting).where(Meeting.platform_specific_id == request.meeting_id)
+        # Look up active meeting by meeting_id from request
+        stmt = select(Meeting).where(
+            Meeting.platform_specific_id == request.meeting_id,
+            Meeting.status == "active"
+        )
         result = await db.execute(stmt)
         meeting = result.scalar_one_or_none()
     
