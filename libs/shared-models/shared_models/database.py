@@ -105,3 +105,12 @@ async def recreate_db():
     except Exception as e:
         logger.error(f"Error recreating database tables: {e}", exc_info=True)
         raise 
+
+
+def get_engine():
+    """Get SQLAlchemy sync engine for database operations.
+    
+    Used for Alembic migrations and other sync database operations.
+    Returns the module-level sync_engine instance.
+    """
+    return sync_engine
