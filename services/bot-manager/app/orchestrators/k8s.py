@@ -237,10 +237,10 @@ async def start_bot_container(
     logger.info(f"Creating Kubernetes Job '{job_name}' for meeting {meeting_id} in namespace {K8S_NAMESPACE}")
 
     try:
-        # Create the Job
+        # Create the Job - pass manifest dict directly (not V1Job object)
         job = batch_api.create_namespaced_job(
             namespace=K8S_NAMESPACE,
-            body=client.V1Job(**job_manifest)
+            body=job_manifest
         )
         
         logger.info(
