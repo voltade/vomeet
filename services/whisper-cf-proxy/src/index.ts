@@ -14,7 +14,7 @@ interface SessionConfig {
   uid: string;
   language?: string;
   task: string;
-  meeting_id?: string;
+  meeting_id?: number;
   platform?: string;
   token?: string;
 }
@@ -31,7 +31,7 @@ interface TranscriptionJob {
 interface WebhookJob {
   type: "webhook";
   sessionId: string;
-  meetingId?: string;
+  meetingId?: number;
   chunkIndex: number;
   timestamp: number;
   text: string;
@@ -148,7 +148,7 @@ export class WhisperSession extends DurableObject {
         chunkIndex: String(chunkIndex),
         sampleRate: String(this.SAMPLE_RATE),
         timestamp: String(timestamp),
-        meetingId: this.config.meeting_id || "",
+        meetingId: String(this.config.meeting_id || ""),
         language: this.config.language || "",
       }
     });

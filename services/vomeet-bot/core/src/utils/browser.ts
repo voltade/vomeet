@@ -334,7 +334,7 @@ export class BrowserWhisperLiveService {
 					use_vad: false,
 					platform: this.botConfigData.platform,
 					token: this.botConfigData.token, // MeetingToken (HS256 JWT)
-					meeting_id: this.botConfigData.nativeMeetingId, // Native meeting ID for CF proxy lookup
+					meeting_id: this.botConfigData.meeting_id, // Internal meeting ID for collector lookup
 					meeting_url: this.botConfigData.meetingUrl || null,
 				};
 
@@ -389,7 +389,7 @@ export class BrowserWhisperLiveService {
 					use_vad: false,
 					platform: this.botConfigData.platform,
 					token: this.botConfigData.token, // MeetingToken (HS256 JWT)
-					meeting_id: this.botConfigData.nativeMeetingId, // Native meeting ID for CF proxy lookup
+					meeting_id: this.botConfigData.meeting_id, // Internal meeting ID for collector lookup
 					meeting_url: this.botConfigData.meetingUrl || null,
 				};
 

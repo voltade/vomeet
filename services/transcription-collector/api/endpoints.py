@@ -567,7 +567,7 @@ class CFProxyTranscriptionSegment(BaseModel):
 class CFProxyTranscriptionRequest(BaseModel):
     """Request from Cloudflare Whisper Proxy"""
     session_id: str
-    meeting_id: Optional[str] = None
+    meeting_id: Optional[int] = None
     chunk_index: int
     timestamp: int  # Unix timestamp ms
     text: str
@@ -599,11 +599,8 @@ async def ingest_cf_proxy_transcription(
     session = None
     
     if request.meeting_id:
-        # Look up active meeting by meeting_id from request
-        stmt = select(Meeting).where(
-            Meeting.platform_specific_id == request.meeting_id,
-            Meeting.status == "active"
-        )
+        # Look up meeting by internal ID
+        stmt = select(Meeting).where(Meeting.id == request.meeting_id)
         result = await db.execute(stmt)
         meeting = result.scalar_one_or_none()
     
