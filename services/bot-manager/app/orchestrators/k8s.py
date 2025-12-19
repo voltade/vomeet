@@ -141,8 +141,10 @@ async def start_bot_container(
     job_name = f"vomeet-bot-{meeting_id}-{connection_id[:8]}"
     job_name = job_name.lower().replace("_", "-")[:63]  # Ensure valid DNS name
 
-    # Create Job manifest (without apiVersion/kind - the k8s client adds those)
+    # Create Job manifest (use snake_case for k8s python client compatibility)
     job_manifest = {
+        "api_version": "batch/v1",
+        "kind": "Job",
         "metadata": {
             "name": job_name,
             "namespace": K8S_NAMESPACE,
