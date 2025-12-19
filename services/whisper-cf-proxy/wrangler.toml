@@ -2,6 +2,7 @@ name = "vomeet-whisper-proxy"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+account_id = "e969f68535cd92a6482a7b34a6a5d74b"  # Voltade account
 
 # R2 bucket for audio storage
 [[r2_buckets]]
