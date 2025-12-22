@@ -1,7 +1,7 @@
-from typing import List, Optional, Dict, Tuple, Any
-from pydantic import BaseModel, Field, EmailStr, validator
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, EmailStr, field_validator, ValidationInfo
 from datetime import datetime
-from enum import Enum, auto
+from enum import Enum
 import re  # Import re for native ID validation
 import logging  # Import logging for status validation warnings
 
@@ -435,7 +435,8 @@ class MeetingBase(BaseModel):
     )
     # meeting_url field removed
 
-    @validator("platform", pre=True)  # pre=True allows validating string before enum conversion
+    @field_validator("platform", mode="before")
+    @classmethod
     def validate_platform_str(cls, v):
         """Validate that the platform string is one of the supported platforms"""
         try:
@@ -462,7 +463,8 @@ class MeetingCreate(BaseModel):
     )
     passcode: Optional[str] = Field(None, description="Optional passcode for the meeting (Teams only)")
 
-    @validator("platform")
+    @field_validator("platform")
+    @classmethod
     def platform_must_be_valid(cls, v):
         """Validate that the platform is one of the supported platforms"""
         try:
@@ -472,11 +474,12 @@ class MeetingCreate(BaseModel):
             supported = ", ".join([p.value for p in Platform])
             raise ValueError(f"Invalid platform '{v}'. Must be one of: {supported}")
 
-    @validator("passcode")
-    def validate_passcode(cls, v, values):
+    @field_validator("passcode")
+    @classmethod
+    def validate_passcode(cls, v, info: ValidationInfo):
         """Validate passcode usage based on platform"""
         if v is not None and v != "":
-            platform = values.get("platform")
+            platform = info.data.get("platform")
             if platform == Platform.GOOGLE_MEET:
                 raise ValueError("Passcode is not supported for Google Meet meetings")
             elif platform == Platform.TEAMS:
@@ -485,27 +488,30 @@ class MeetingCreate(BaseModel):
                     raise ValueError("Teams passcode must be 8-20 alphanumeric characters")
         return v
 
-    @validator("language")
+    @field_validator("language")
+    @classmethod
     def validate_language(cls, v):
         """Validate that the language code is one of the accepted language codes."""
         if v is not None and v != "" and v not in ACCEPTED_LANGUAGE_CODES:
             raise ValueError(f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}")
         return v
 
-    @validator("task")
+    @field_validator("task")
+    @classmethod
     def validate_task(cls, v):
         """Validate that the task is one of the allowed tasks."""
         if v is not None and v != "" and v not in ALLOWED_TASKS:
             raise ValueError(f"Invalid task '{v}'. Must be one of: {sorted(ALLOWED_TASKS)}")
         return v
 
-    @validator("native_meeting_id")
-    def validate_native_meeting_id(cls, v, values):
+    @field_validator("native_meeting_id")
+    @classmethod
+    def validate_native_meeting_id(cls, v, info: ValidationInfo):
         """Validate that the native meeting ID matches the expected format for the platform."""
         if not v or not v.strip():
             raise ValueError("native_meeting_id cannot be empty")
 
-        platform = values.get("platform")
+        platform = info.data.get("platform")
         if not platform:
             return v  # Let platform validator handle this case
 
@@ -552,7 +558,8 @@ class MeetingResponse(
     created_at: datetime
     updated_at: datetime
 
-    @validator("status", pre=True)
+    @field_validator("status", mode="before")
+    @classmethod
     def normalize_status(cls, v):
         """Normalize invalid status values to valid enum values"""
         if isinstance(v, str):
@@ -566,13 +573,14 @@ class MeetingResponse(
 
         return v
 
-    @validator("data")
-    def validate_status_data(cls, v, values):
+    @field_validator("data")
+    @classmethod
+    def validate_status_data(cls, v, info: ValidationInfo):
         """Validate that status-related data is consistent with meeting status."""
         if v is None:
             return v
 
-        status = values.get("status")
+        status = info.data.get("status")
         if not status:
             return v
 
@@ -608,7 +616,8 @@ class MeetingDataUpdate(BaseModel):
     languages: Optional[List[str]] = Field(None, description="List of language codes detected/used in the meeting")
     notes: Optional[str] = Field(None, description="Meeting notes or description")
 
-    @validator("languages")
+    @field_validator("languages")
+    @classmethod
     def validate_languages(cls, v):
         """Validate that all language codes in the list are accepted faster-whisper codes."""
         if v is not None:
@@ -633,14 +642,16 @@ class MeetingConfigUpdate(BaseModel):
     language: Optional[str] = Field(None, description="New language code (e.g., 'en', 'es')")
     task: Optional[str] = Field(None, description="New task ('transcribe' or 'translate')")
 
-    @validator("language")
+    @field_validator("language")
+    @classmethod
     def validate_language(cls, v):
         """Validate that the language code is one of the accepted faster-whisper codes."""
         if v is not None and v != "" and v not in ACCEPTED_LANGUAGE_CODES:
             raise ValueError(f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}")
         return v
 
-    @validator("task")
+    @field_validator("task")
+    @classmethod
     def validate_task(cls, v):
         """Validate that the task is one of the allowed tasks."""
         if v is not None and v != "" and v not in ALLOWED_TASKS:
@@ -662,7 +673,8 @@ class TranscriptionSegment(BaseModel):
     absolute_start_time: Optional[datetime] = Field(None, description="Absolute start timestamp of the segment (UTC)")
     absolute_end_time: Optional[datetime] = Field(None, description="Absolute end timestamp of the segment (UTC)")
 
-    @validator("language")
+    @field_validator("language")
+    @classmethod
     def validate_language(cls, v):
         """Validate that the language code is one of the accepted faster-whisper codes."""
         if v is not None and v != "" and v not in ACCEPTED_LANGUAGE_CODES:
@@ -687,7 +699,8 @@ class WhisperLiveData(BaseModel):
     meeting_id: str  # Native Meeting ID (string, e.g., 'abc-xyz-pqr')
     segments: List[TranscriptionSegment]
 
-    @validator("platform", pre=True)
+    @field_validator("platform", mode="before")
+    @classmethod
     def validate_whisperlive_platform_str(cls, v):
         """Validate that the platform string is one of the supported platforms"""
         try:
@@ -749,7 +762,8 @@ class BotStatus(BaseModel):
     labels: Optional[Dict[str, str]] = None
     meeting_id_from_name: Optional[str] = None  # Example auxiliary info
 
-    @validator("normalized_status")
+    @field_validator("normalized_status")
+    @classmethod
     def validate_normalized_status(cls, v):
         if v is None:
             return v
@@ -796,7 +810,8 @@ class MeetingTableResponse(BaseModel):
     updated_at: datetime
     # Excludes: data, transcriptions, sessions
 
-    @validator("status", pre=True)
+    @field_validator("status", mode="before")
+    @classmethod
     def normalize_status(cls, v):
         """Normalize invalid status values to valid enum values"""
         if isinstance(v, str):
@@ -1006,13 +1021,15 @@ class WebhookCreate(BaseModel):
     events: List[str] = Field(default=["*"], description="List of event types to subscribe to. Use '*' for all events.")
     description: Optional[str] = Field(None, max_length=255, description="Optional description for the webhook")
 
-    @validator("url")
+    @field_validator("url")
+    @classmethod
     def validate_url(cls, v):
         if not v.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
         return v
 
-    @validator("events")
+    @field_validator("events")
+    @classmethod
     def validate_events(cls, v):
         valid_events = {e.value for e in WebhookEventType}
         for event in v:
@@ -1029,13 +1046,15 @@ class WebhookUpdate(BaseModel):
     enabled: Optional[bool] = Field(None, description="Enable or disable the webhook")
     description: Optional[str] = Field(None, max_length=255, description="New description")
 
-    @validator("url")
+    @field_validator("url")
+    @classmethod
     def validate_url(cls, v):
         if v is not None and not v.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
         return v
 
-    @validator("events")
+    @field_validator("events")
+    @classmethod
     def validate_events(cls, v):
         if v is not None:
             valid_events = {e.value for e in WebhookEventType}
