@@ -28,12 +28,8 @@ class User(Base):
     name = Column(String(100))
     image_url = Column(Text)
     created_at = Column(DateTime, server_default=func.now())
-    max_concurrent_bots = Column(
-        Integer, nullable=False, server_default="1", default=1
-    )  # Added field
-    data = Column(
-        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=lambda: {}
-    )
+    max_concurrent_bots = Column(Integer, nullable=False, server_default="1", default=1)  # Added field
+    data = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=lambda: {})
 
     meetings = relationship("Meeting", back_populates="user")
     api_tokens = relationship("APIToken", back_populates="user")
@@ -68,9 +64,7 @@ class Meeting(Base):
 
     user = relationship("User", back_populates="meetings")
     transcriptions = relationship("Transcription", back_populates="meeting")
-    sessions = relationship(
-        "MeetingSession", back_populates="meeting", cascade="all, delete-orphan"
-    )
+    sessions = relationship("MeetingSession", back_populates="meeting", cascade="all, delete-orphan")
 
     # Add composite index for efficient lookup by user, platform, and native ID, including created_at for sorting
     __table_args__ = (
@@ -99,9 +93,7 @@ class Meeting(Base):
     def constructed_meeting_url(self) -> Optional[str]:  # Added return type hint
         # Calculate the URL on demand using the static method from schemas.py
         if self.platform and self.platform_specific_id:
-            return Platform.construct_meeting_url(
-                self.platform, self.platform_specific_id
-            )
+            return Platform.construct_meeting_url(self.platform, self.platform_specific_id)
         return None
 
 
@@ -121,14 +113,10 @@ class Transcription(Base):
 
     meeting = relationship("Meeting", back_populates="transcriptions")
 
-    session_uid = Column(
-        String, nullable=True, index=True
-    )  # Link to the specific bot session
+    session_uid = Column(String, nullable=True, index=True)  # Link to the specific bot session
 
     # Index for efficient querying by meeting_id and start_time
-    __table_args__ = (
-        Index("ix_transcription_meeting_start", "meeting_id", "start_time"),
-    )
+    __table_args__ = (Index("ix_transcription_meeting_start", "meeting_id", "start_time"),)
 
 
 # New table to store session start times
@@ -136,16 +124,38 @@ class MeetingSession(Base):
     __tablename__ = "meeting_sessions"
     id = Column(Integer, primary_key=True, index=True)
     meeting_id = Column(Integer, ForeignKey("meetings.id"), nullable=False, index=True)
-    session_uid = Column(
-        String, nullable=False, index=True
-    )  # Stores the 'uid' (based on connectionId)
+    session_uid = Column(String, nullable=False, index=True)  # Stores the 'uid' (based on connectionId)
     # Store timezone-aware timestamp to avoid ambiguity
-    session_start_time = Column(
-        sqlalchemy.DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    session_start_time = Column(sqlalchemy.DateTime(timezone=True), nullable=False, server_default=func.now())
 
     meeting = relationship("Meeting", back_populates="sessions")  # Define relationship
 
     __table_args__ = (
         UniqueConstraint("meeting_id", "session_uid", name="_meeting_session_uc"),
     )  # Ensure unique session per meeting
+
+
+class AudioChunk(Base):
+    """
+    Stores transcribed audio chunks from Cloudflare Whisper Proxy.
+    Each chunk represents ~10 seconds of audio stored in R2.
+    Using audio_key as unique identifier ensures idempotent webhook delivery.
+    """
+
+    __tablename__ = "audio_chunks"
+    id = Column(Integer, primary_key=True, index=True)
+    meeting_id = Column(Integer, ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_uid = Column(String, nullable=True, index=True)
+    audio_key = Column(String(512), nullable=False, unique=True)  # R2 key: {session_uid}/{timestamp}-{chunk_index}.raw
+    chunk_index = Column(Integer, nullable=False)  # Sequence number within session
+    chunk_timestamp = Column(sqlalchemy.BigInteger, nullable=False)  # Unix timestamp ms when chunk was created
+    duration = Column(Float, nullable=True)  # Duration of audio in seconds
+    full_text = Column(Text, nullable=True)  # Full transcription text for chunk
+    segments = Column(JSONB, nullable=True)  # Array of {start, end, text, temperature, avg_logprob, ...}
+    language = Column(String(10), nullable=True)  # e.g., 'en', 'es'
+    language_probability = Column(Float, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    meeting = relationship("Meeting")
+
+    __table_args__ = (Index("ix_audio_chunks_meeting_chunk", "meeting_id", "chunk_index"),)

@@ -158,12 +158,8 @@ class MeetingCompletionReason(str, Enum):
 
     STOPPED = "stopped"  # User stopped by API
     VALIDATION_ERROR = "validation_error"  # Post bot validation failed
-    AWAITING_ADMISSION_TIMEOUT = (
-        "awaiting_admission_timeout"  # Timeout during awaiting admission
-    )
-    AWAITING_ADMISSION_REJECTED = (
-        "awaiting_admission_rejected"  # Rejected during awaiting admission
-    )
+    AWAITING_ADMISSION_TIMEOUT = "awaiting_admission_timeout"  # Timeout during awaiting admission
+    AWAITING_ADMISSION_REJECTED = "awaiting_admission_rejected"  # Rejected during awaiting admission
     LEFT_ALONE = "left_alone"  # Timeout for being alone
     EVICTED = "evicted"  # Kicked out from meeting using meeting UI
 
@@ -223,9 +219,7 @@ def get_valid_status_transitions() -> Dict[MeetingStatus, List[MeetingStatus]]:
     }
 
 
-def is_valid_status_transition(
-    from_status: MeetingStatus, to_status: MeetingStatus
-) -> bool:
+def is_valid_status_transition(from_status: MeetingStatus, to_status: MeetingStatus) -> bool:
     """
     Check if a status transition is valid.
 
@@ -338,9 +332,7 @@ class Platform(str, Enum):
         return reverse_mapping.get(bot_platform_name)
 
     @classmethod
-    def construct_meeting_url(
-        cls, platform_str: str, native_id: str, passcode: Optional[str] = None
-    ) -> Optional[str]:
+    def construct_meeting_url(cls, platform_str: str, native_id: str, passcode: Optional[str] = None) -> Optional[str]:
         """
         Constructs the full meeting URL from platform, native ID, and optional passcode.
         Returns None if the platform is unknown or ID is invalid for the platform.
@@ -379,9 +371,7 @@ class UserBase(BaseModel):  # Base for common user fields
     max_concurrent_bots: Optional[int] = Field(
         None, description="Maximum number of concurrent bots allowed for the user"
     )
-    data: Optional[Dict[str, Any]] = Field(
-        None, description="JSONB storage for arbitrary user data, like webhook URLs"
-    )
+    data: Optional[Dict[str, Any]] = Field(None, description="JSONB storage for arbitrary user data, like webhook URLs")
 
 
 class UserCreate(UserBase):
@@ -391,9 +381,7 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     id: int
     created_at: datetime
-    max_concurrent_bots: int = Field(
-        ..., description="Maximum number of concurrent bots allowed for the user"
-    )
+    max_concurrent_bots: int = Field(..., description="Maximum number of concurrent bots allowed for the user")
 
     class Config:
         orm_mode = True  # Pydantic v1
@@ -442,18 +430,14 @@ class UserUpdate(BaseModel):
 
 
 class MeetingBase(BaseModel):
-    platform: Platform = Field(
-        ..., description="Platform identifier (e.g., 'google_meet', 'teams')"
-    )
+    platform: Platform = Field(..., description="Platform identifier (e.g., 'google_meet', 'teams')")
     native_meeting_id: str = Field(
         ...,
         description="The native meeting identifier (e.g., 'abc-defg-hij' for Google Meet, '1234567890' for Teams)",
     )
     # meeting_url field removed
 
-    @validator(
-        "platform", pre=True
-    )  # pre=True allows validating string before enum conversion
+    @validator("platform", pre=True)  # pre=True allows validating string before enum conversion
     def validate_platform_str(cls, v):
         """Validate that the platform string is one of the supported platforms"""
         try:
@@ -472,19 +456,13 @@ class MeetingCreate(BaseModel):
         ...,
         description="The platform-specific ID for the meeting (e.g., Google Meet code, Teams ID)",
     )
-    bot_name: Optional[str] = Field(
-        None, description="Optional name for the bot in the meeting"
-    )
-    language: Optional[str] = Field(
-        None, description="Optional language code for transcription (e.g., 'en', 'es')"
-    )
+    bot_name: Optional[str] = Field(None, description="Optional name for the bot in the meeting")
+    language: Optional[str] = Field(None, description="Optional language code for transcription (e.g., 'en', 'es')")
     task: Optional[str] = Field(
         None,
         description="Optional task for the transcription model (e.g., 'transcribe', 'translate')",
     )
-    passcode: Optional[str] = Field(
-        None, description="Optional passcode for the meeting (Teams only)"
-    )
+    passcode: Optional[str] = Field(None, description="Optional passcode for the meeting (Teams only)")
 
     @validator("platform")
     def platform_must_be_valid(cls, v):
@@ -506,27 +484,21 @@ class MeetingCreate(BaseModel):
             elif platform == Platform.TEAMS:
                 # Teams passcode validation (alphanumeric, reasonable length)
                 if not re.match(r"^[A-Za-z0-9]{8,20}$", v):
-                    raise ValueError(
-                        "Teams passcode must be 8-20 alphanumeric characters"
-                    )
+                    raise ValueError("Teams passcode must be 8-20 alphanumeric characters")
         return v
 
     @validator("language")
     def validate_language(cls, v):
         """Validate that the language code is one of the accepted language codes."""
         if v is not None and v != "" and v not in ACCEPTED_LANGUAGE_CODES:
-            raise ValueError(
-                f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}"
-            )
+            raise ValueError(f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}")
         return v
 
     @validator("task")
     def validate_task(cls, v):
         """Validate that the task is one of the allowed tasks."""
         if v is not None and v != "" and v not in ALLOWED_TASKS:
-            raise ValueError(
-                f"Invalid task '{v}'. Must be one of: {sorted(ALLOWED_TASKS)}"
-            )
+            raise ValueError(f"Invalid task '{v}'. Must be one of: {sorted(ALLOWED_TASKS)}")
         return v
 
     @validator("native_meeting_id")
@@ -545,24 +517,16 @@ class MeetingCreate(BaseModel):
         if platform == Platform.GOOGLE_MEET:
             # Google Meet format: abc-defg-hij
             if not re.fullmatch(r"^[a-z]{3}-[a-z]{4}-[a-z]{3}$", native_id):
-                raise ValueError(
-                    "Google Meet ID must be in format 'abc-defg-hij' (lowercase letters only)"
-                )
+                raise ValueError("Google Meet ID must be in format 'abc-defg-hij' (lowercase letters only)")
 
         elif platform == Platform.TEAMS:
             # Teams format: numeric ID only (10-15 digits)
             if not re.fullmatch(r"^\d{10,15}$", native_id):
-                raise ValueError(
-                    "Teams meeting ID must be 10-15 digits only (not a full URL)"
-                )
+                raise ValueError("Teams meeting ID must be 10-15 digits only (not a full URL)")
 
             # Explicitly reject full URLs
-            if native_id.startswith(
-                ("http://", "https://", "teams.microsoft.com", "teams.live.com")
-            ):
-                raise ValueError(
-                    "Teams meeting ID must be the numeric ID only (e.g., '9399697580372'), not a full URL"
-                )
+            if native_id.startswith(("http://", "https://", "teams.microsoft.com", "teams.live.com")):
+                raise ValueError("Teams meeting ID must be the numeric ID only (e.g., '9399697580372'), not a full URL")
 
         return v
 
@@ -643,21 +607,15 @@ class MeetingDataUpdate(BaseModel):
     """Schema for updating meeting data fields - restricted to user-editable fields only"""
 
     name: Optional[str] = Field(None, description="Meeting name/title")
-    participants: Optional[List[str]] = Field(
-        None, description="List of participant names"
-    )
-    languages: Optional[List[str]] = Field(
-        None, description="List of language codes detected/used in the meeting"
-    )
+    participants: Optional[List[str]] = Field(None, description="List of participant names")
+    languages: Optional[List[str]] = Field(None, description="List of language codes detected/used in the meeting")
     notes: Optional[str] = Field(None, description="Meeting notes or description")
 
     @validator("languages")
     def validate_languages(cls, v):
         """Validate that all language codes in the list are accepted faster-whisper codes."""
         if v is not None:
-            invalid_languages = [
-                lang for lang in v if lang not in ACCEPTED_LANGUAGE_CODES
-            ]
+            invalid_languages = [lang for lang in v if lang not in ACCEPTED_LANGUAGE_CODES]
             if invalid_languages:
                 raise ValueError(
                     f"Invalid language codes: {invalid_languages}. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}"
@@ -675,29 +633,21 @@ class MeetingUpdate(BaseModel):
 class MeetingConfigUpdate(BaseModel):
     """Schema for updating bot configuration (language and task)"""
 
-    language: Optional[str] = Field(
-        None, description="New language code (e.g., 'en', 'es')"
-    )
-    task: Optional[str] = Field(
-        None, description="New task ('transcribe' or 'translate')"
-    )
+    language: Optional[str] = Field(None, description="New language code (e.g., 'en', 'es')")
+    task: Optional[str] = Field(None, description="New task ('transcribe' or 'translate')")
 
     @validator("language")
     def validate_language(cls, v):
         """Validate that the language code is one of the accepted faster-whisper codes."""
         if v is not None and v != "" and v not in ACCEPTED_LANGUAGE_CODES:
-            raise ValueError(
-                f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}"
-            )
+            raise ValueError(f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}")
         return v
 
     @validator("task")
     def validate_task(cls, v):
         """Validate that the task is one of the allowed tasks."""
         if v is not None and v != "" and v not in ALLOWED_TASKS:
-            raise ValueError(
-                f"Invalid task '{v}'. Must be one of: {sorted(ALLOWED_TASKS)}"
-            )
+            raise ValueError(f"Invalid task '{v}'. Must be one of: {sorted(ALLOWED_TASKS)}")
         return v
 
 
@@ -712,20 +662,14 @@ class TranscriptionSegment(BaseModel):
     language: Optional[str]
     created_at: Optional[datetime]
     speaker: Optional[str] = None
-    absolute_start_time: Optional[datetime] = Field(
-        None, description="Absolute start timestamp of the segment (UTC)"
-    )
-    absolute_end_time: Optional[datetime] = Field(
-        None, description="Absolute end timestamp of the segment (UTC)"
-    )
+    absolute_start_time: Optional[datetime] = Field(None, description="Absolute start timestamp of the segment (UTC)")
+    absolute_end_time: Optional[datetime] = Field(None, description="Absolute end timestamp of the segment (UTC)")
 
     @validator("language")
     def validate_language(cls, v):
         """Validate that the language code is one of the accepted faster-whisper codes."""
         if v is not None and v != "" and v not in ACCEPTED_LANGUAGE_CODES:
-            raise ValueError(
-                f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}"
-            )
+            raise ValueError(f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}")
         return v
 
     class Config:
@@ -759,9 +703,7 @@ class WhisperLiveData(BaseModel):
 
 
 # --- Other Schemas ---
-class TranscriptionResponse(
-    BaseModel
-):  # Doesn't inherit MeetingResponse to avoid redundancy if joining data
+class TranscriptionResponse(BaseModel):  # Doesn't inherit MeetingResponse to avoid redundancy if joining data
     """Response for getting a meeting's transcript."""
 
     # Meeting details (consider duplicating fields from MeetingResponse or nesting)
@@ -773,9 +715,7 @@ class TranscriptionResponse(
     start_time: Optional[datetime]
     end_time: Optional[datetime]
     # ---
-    segments: List[TranscriptionSegment] = Field(
-        ..., description="List of transcript segments"
-    )
+    segments: List[TranscriptionSegment] = Field(..., description="List of transcript segments")
 
     class Config:
         orm_mode = True  # Pydantic v1

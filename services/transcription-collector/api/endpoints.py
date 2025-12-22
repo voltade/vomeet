@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as aioredis
 
 from shared_models.database import get_db
-from shared_models.models import User, Meeting, Transcription, MeetingSession
+from shared_models.models import User, Meeting, Transcription, MeetingSession, AudioChunk
 from shared_models.schemas import (
     HealthResponse,
     MeetingResponse,
@@ -58,30 +58,29 @@ async def _get_full_transcript_segments(
     """
     Core logic to fetch and merge transcript segments from PG and Redis.
     """
-    logger.debug(
-        f"[_get_full_transcript_segments] Fetching for meeting ID {internal_meeting_id}"
-    )
+    logger.debug(f"[_get_full_transcript_segments] Fetching for meeting ID {internal_meeting_id}")
 
     # 1. Fetch session start times for this meeting
-    stmt_sessions = select(MeetingSession).where(
-        MeetingSession.meeting_id == internal_meeting_id
-    )
+    stmt_sessions = select(MeetingSession).where(MeetingSession.meeting_id == internal_meeting_id)
     result_sessions = await db.execute(stmt_sessions)
     sessions = result_sessions.scalars().all()
-    session_times: Dict[str, datetime] = {
-        session.session_uid: session.session_start_time for session in sessions
-    }
+    session_times: Dict[str, datetime] = {session.session_uid: session.session_start_time for session in sessions}
     if not session_times:
         logger.warning(
             f"[_get_full_transcript_segments] No session start times found in DB for meeting {internal_meeting_id}."
         )
 
-    # 2. Fetch transcript segments from PostgreSQL (immutable segments)
-    stmt_transcripts = select(Transcription).where(
-        Transcription.meeting_id == internal_meeting_id
-    )
+    # 2. Fetch transcript segments from PostgreSQL (immutable segments - legacy)
+    stmt_transcripts = select(Transcription).where(Transcription.meeting_id == internal_meeting_id)
     result_transcripts = await db.execute(stmt_transcripts)
     db_segments = result_transcripts.scalars().all()
+
+    # 2b. Fetch audio chunks from new AudioChunk table (CF Proxy transcriptions)
+    stmt_chunks = (
+        select(AudioChunk).where(AudioChunk.meeting_id == internal_meeting_id).order_by(AudioChunk.chunk_index)
+    )
+    result_chunks = await db.execute(stmt_chunks)
+    audio_chunks = result_chunks.scalars().all()
 
     # 3. Fetch segments from Redis (mutable segments)
     hash_key = f"meeting:{internal_meeting_id}:segments"
@@ -101,34 +100,52 @@ async def _get_full_transcript_segments(
     for segment in db_segments:
         key = f"{segment.start_time:.3f}"
         session_uid = segment.session_uid
-        session_start = session_times.get(session_uid)
-        if session_uid and session_start:
+        session_start = session_times.get(session_uid) if session_uid else None
+
+        # Try to calculate absolute time from session start, fallback to created_at
+        absolute_start_time = None
+        absolute_end_time = None
+
+        if session_start:
             try:
                 if session_start.tzinfo is None:
                     session_start = session_start.replace(tzinfo=timezone.utc)
-                absolute_start_time = session_start + timedelta(
-                    seconds=segment.start_time
-                )
+                absolute_start_time = session_start + timedelta(seconds=segment.start_time)
                 absolute_end_time = session_start + timedelta(seconds=segment.end_time)
-                segment_obj = TranscriptionSegment(
-                    start_time=segment.start_time,
-                    end_time=segment.end_time,
-                    text=segment.text,
-                    language=segment.language,
-                    speaker=segment.speaker,
-                    created_at=segment.created_at,
-                    absolute_start_time=absolute_start_time,
-                    absolute_end_time=absolute_end_time,
-                )
-                merged_segments_with_abs_time[key] = (absolute_start_time, segment_obj)
             except Exception as calc_err:
-                logger.error(
-                    f"[API Meet {internal_meeting_id}] Error calculating absolute time for DB segment {key} (UID: {session_uid}): {calc_err}"
+                logger.warning(
+                    f"[API Meet {internal_meeting_id}] Error calculating absolute time from session for segment {key}: {calc_err}"
                 )
-        else:
-            logger.warning(
-                f"[API Meet {internal_meeting_id}] Missing session UID ({session_uid}) or start time for DB segment {key}. Cannot calculate absolute time."
-            )
+
+        # Fallback: use created_at as absolute time if session_start not available
+        if absolute_start_time is None and segment.created_at:
+            created_at = segment.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            # Use created_at minus the relative times as an approximation
+            # This assumes created_at is close to when the segment ended
+            absolute_start_time = created_at - timedelta(seconds=(segment.end_time - segment.start_time))
+            absolute_end_time = created_at
+
+        # Create segment object regardless of session match
+        segment_obj = TranscriptionSegment(
+            start_time=segment.start_time,
+            end_time=segment.end_time,
+            text=segment.text,
+            language=segment.language,
+            speaker=segment.speaker,
+            created_at=segment.created_at,
+            absolute_start_time=absolute_start_time,
+            absolute_end_time=absolute_end_time,
+        )
+
+        # Use absolute_start_time for sorting if available, otherwise created_at or a fixed time
+        sort_time = absolute_start_time or (
+            segment.created_at.replace(tzinfo=timezone.utc)
+            if segment.created_at
+            else datetime.min.replace(tzinfo=timezone.utc)
+        )
+        merged_segments_with_abs_time[key] = (sort_time, segment_obj)
 
     for start_time_str, segment_json in redis_segments_raw.items():
         try:
@@ -143,44 +160,105 @@ async def _get_full_transcript_segments(
                     if session_uid_from_redis.startswith(prefix):
                         potential_session_key = session_uid_from_redis[len(prefix) :]
                         break
-            session_start = session_times.get(potential_session_key)
-            if (
-                "end_time" in segment_data
-                and "text" in segment_data
-                and session_uid_from_redis
-                and session_start
-            ):
+            session_start = session_times.get(potential_session_key) if potential_session_key else None
+
+            # Must have at least end_time and text
+            if "end_time" not in segment_data or "text" not in segment_data:
+                continue
+
+            relative_start_time = float(start_time_str)
+            absolute_start_time = None
+            absolute_end_time = None
+
+            if session_start:
                 if session_start.tzinfo is None:
                     session_start = session_start.replace(tzinfo=timezone.utc)
-                relative_start_time = float(start_time_str)
-                absolute_start_time = session_start + timedelta(
-                    seconds=relative_start_time
-                )
-                absolute_end_time = session_start + timedelta(
-                    seconds=segment_data["end_time"]
-                )
-                segment_obj = TranscriptionSegment(
-                    start_time=relative_start_time,
-                    end_time=segment_data["end_time"],
-                    text=segment_data["text"],
-                    language=segment_data.get("language"),
-                    speaker=segment_data.get("speaker"),
-                    absolute_start_time=absolute_start_time,
-                    absolute_end_time=absolute_end_time,
-                )
-                merged_segments_with_abs_time[start_time_str] = (
-                    absolute_start_time,
-                    segment_obj,
-                )
+                absolute_start_time = session_start + timedelta(seconds=relative_start_time)
+                absolute_end_time = session_start + timedelta(seconds=segment_data["end_time"])
+            else:
+                # Fallback: use current time as approximation when no session found
+                now = datetime.now(timezone.utc)
+                # Approximate absolute times based on relative segment times
+                duration = segment_data["end_time"] - relative_start_time
+                absolute_end_time = now
+                absolute_start_time = now - timedelta(seconds=duration)
+
+            segment_obj = TranscriptionSegment(
+                start_time=relative_start_time,
+                end_time=segment_data["end_time"],
+                text=segment_data["text"],
+                language=segment_data.get("language"),
+                speaker=segment_data.get("speaker"),
+                absolute_start_time=absolute_start_time,
+                absolute_end_time=absolute_end_time,
+            )
+
+            # Use absolute_start_time for sorting
+            sort_time = absolute_start_time or datetime.now(timezone.utc)
+            merged_segments_with_abs_time[start_time_str] = (
+                sort_time,
+                segment_obj,
+            )
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             logger.error(
                 f"[_get_full_transcript_segments] Error parsing Redis segment {start_time_str} for meeting {internal_meeting_id}: {e}"
             )
 
+    # 4b. Process AudioChunk records (new CF Proxy format)
+    # Audio chunks have chunk_timestamp and chunk_index for ordering
+    # Duration is typically 10 seconds per chunk
+    CHUNK_DURATION_MS = 10000  # 10 seconds default
+    for chunk in audio_chunks:
+        chunk_base_time = datetime.fromtimestamp(chunk.chunk_timestamp / 1000, tz=timezone.utc)
+
+        # If chunk has detailed segments, expand them
+        if chunk.segments:
+            for seg in chunk.segments:
+                seg_start = seg.get("start", 0)
+                seg_end = seg.get("end", chunk.duration or 10.0)
+                seg_text = seg.get("text", "")
+
+                if not seg_text or not seg_text.strip():
+                    continue
+
+                # Calculate absolute time: chunk base + segment relative time
+                absolute_start_time = chunk_base_time + timedelta(seconds=seg_start)
+                absolute_end_time = chunk_base_time + timedelta(seconds=seg_end)
+
+                segment_obj = TranscriptionSegment(
+                    start_time=seg_start,
+                    end_time=seg_end,
+                    text=seg_text.strip(),
+                    language=chunk.language,
+                    speaker=None,
+                    absolute_start_time=absolute_start_time,
+                    absolute_end_time=absolute_end_time,
+                )
+
+                # Use unique key to avoid duplicates with same start time from different chunks
+                key = f"chunk_{chunk.id}_{seg_start:.3f}"
+                merged_segments_with_abs_time[key] = (absolute_start_time, segment_obj)
+        elif chunk.full_text and chunk.full_text.strip():
+            # No detailed segments, use full_text as single segment
+            duration = chunk.duration or 10.0
+            absolute_start_time = chunk_base_time
+            absolute_end_time = chunk_base_time + timedelta(seconds=duration)
+
+            segment_obj = TranscriptionSegment(
+                start_time=0.0,
+                end_time=duration,
+                text=chunk.full_text.strip(),
+                language=chunk.language,
+                speaker=None,
+                absolute_start_time=absolute_start_time,
+                absolute_end_time=absolute_end_time,
+            )
+
+            key = f"chunk_{chunk.id}_full"
+            merged_segments_with_abs_time[key] = (absolute_start_time, segment_obj)
+
     # 5. Sort based on calculated absolute time and return
-    sorted_segment_tuples = sorted(
-        merged_segments_with_abs_time.values(), key=lambda item: item[0]
-    )
+    sorted_segment_tuples = sorted(merged_segments_with_abs_time.values(), key=lambda item: item[0])
     segments = [segment_obj for abs_time, segment_obj in sorted_segment_tuples]
 
     # 6. Deduplicate overlapping segments with identical text
@@ -192,9 +270,7 @@ async def _get_full_transcript_segments(
 
         last = deduped[-1]
         same_text = (seg.text or "").strip() == (last.text or "").strip()
-        overlaps = max(seg.start_time, last.start_time) < min(
-            seg.end_time, last.end_time
-        )
+        overlaps = max(seg.start_time, last.start_time) < min(seg.end_time, last.end_time)
 
         if same_text and overlaps:
             # If current is fully inside last → drop current
@@ -236,9 +312,7 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)):
         db_status = f"unhealthy: {str(e)}"
 
     return HealthResponse(
-        status="healthy"
-        if redis_status == "healthy" and db_status == "healthy"
-        else "unhealthy",
+        status="healthy" if redis_status == "healthy" and db_status == "healthy" else "unhealthy",
         redis=redis_status,
         database=db_status,
         timestamp=datetime.now().isoformat(),
@@ -251,15 +325,9 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)):
     summary="Get list of all meetings for the current user",
     dependencies=[Depends(get_current_user)],
 )
-async def get_meetings(
-    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
-):
+async def get_meetings(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Returns a list of all meetings initiated by the authenticated user."""
-    stmt = (
-        select(Meeting)
-        .where(Meeting.user_id == current_user.id)
-        .order_by(Meeting.created_at.desc())
-    )
+    stmt = select(Meeting).where(Meeting.user_id == current_user.id).order_by(Meeting.created_at.desc())
     result = await db.execute(stmt)
     meetings = result.scalars().all()
     return MeetingListResponse(meetings=[MeetingResponse.from_orm(m) for m in meetings])
@@ -304,9 +372,7 @@ async def get_transcript_by_native_id(
             Meeting.platform == platform.value,
             Meeting.platform_specific_id == native_meeting_id,
         )
-        logger.debug(
-            f"[API] Looking for specific meeting ID {meeting_id} with platform/native validation"
-        )
+        logger.debug(f"[API] Looking for specific meeting ID {meeting_id} with platform/native validation")
     else:
         # Get latest meeting by platform/native_meeting_id (default behavior)
         stmt_meeting = (
@@ -342,17 +408,11 @@ async def get_transcript_by_native_id(
             )
 
     internal_meeting_id = meeting.id
-    logger.debug(
-        f"[API] Found meeting record ID {internal_meeting_id}, fetching segments..."
-    )
+    logger.debug(f"[API] Found meeting record ID {internal_meeting_id}, fetching segments...")
 
-    sorted_segments = await _get_full_transcript_segments(
-        internal_meeting_id, db, redis_c
-    )
+    sorted_segments = await _get_full_transcript_segments(internal_meeting_id, db, redis_c)
 
-    logger.info(
-        f"[API Meet {internal_meeting_id}] Merged and sorted into {len(sorted_segments)} total segments."
-    )
+    logger.info(f"[API Meet {internal_meeting_id}] Merged and sorted into {len(sorted_segments)} total segments.")
 
     meeting_details = MeetingResponse.from_orm(meeting)
     response_data = meeting_details.dict()
@@ -384,9 +444,7 @@ async def ws_authorize_subscribe(
 
     for idx, meeting_ref in enumerate(meetings):
         platform_value = (
-            meeting_ref.platform.value
-            if isinstance(meeting_ref.platform, Platform)
-            else str(meeting_ref.platform)
+            meeting_ref.platform.value if isinstance(meeting_ref.platform, Platform) else str(meeting_ref.platform)
         )
         native_id = meeting_ref.native_meeting_id
 
@@ -396,9 +454,7 @@ async def ws_authorize_subscribe(
         except Exception:
             constructed = None
         if not constructed:
-            errors.append(
-                f"meetings[{idx}] invalid native_meeting_id for platform '{platform_value}'"
-            )
+            errors.append(f"meetings[{idx}] invalid native_meeting_id for platform '{platform_value}'")
             continue
 
         stmt_meeting = (
@@ -427,9 +483,7 @@ async def ws_authorize_subscribe(
             }
         )
 
-    return WsAuthorizeSubscribeResponse(
-        authorized=authorized, errors=errors, user_id=current_user.id
-    )
+    return WsAuthorizeSubscribeResponse(authorized=authorized, errors=errors, user_id=current_user.id)
 
 
 @router.get(
@@ -438,13 +492,9 @@ async def ws_authorize_subscribe(
     summary="[Internal] Get all transcript segments for a meeting",
     include_in_schema=False,
 )
-async def get_transcript_internal(
-    meeting_id: int, request: Request, db: AsyncSession = Depends(get_db)
-):
+async def get_transcript_internal(meeting_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Internal endpoint for services to fetch all transcript segments for a given meeting ID."""
-    logger.debug(
-        f"[Internal API] Transcript segments requested for meeting {meeting_id}"
-    )
+    logger.debug(f"[Internal API] Transcript segments requested for meeting {meeting_id}")
     redis_c = getattr(request.app.state, "redis_client", None)
 
     meeting = await db.get(Meeting, meeting_id)
@@ -473,9 +523,7 @@ async def update_meeting_data(
 ):
     """Updates the user-editable data (name, participants, languages, notes) for the latest meeting matching the platform and native ID."""
 
-    logger.info(
-        f"[API] User {current_user.id} updating meeting {platform.value}/{native_meeting_id}"
-    )
+    logger.info(f"[API] User {current_user.id} updating meeting {platform.value}/{native_meeting_id}")
     logger.debug(f"[API] Raw meeting_update object: {meeting_update}")
     logger.debug(f"[API] meeting_update.data type: {type(meeting_update.data)}")
     logger.debug(f"[API] meeting_update.data content: {meeting_update.data}")
@@ -543,9 +591,7 @@ async def update_meeting_data(
             updated_fields.append(f"{key}={value}")
             logger.debug(f"[API] Updated field {key} = {value}")
         else:
-            logger.debug(
-                f"[API] Skipped field {key} (not in allowed_fields or value is None)"
-            )
+            logger.debug(f"[API] Skipped field {key} (not in allowed_fields or value is None)")
 
     # Assign the new dict to ensure SQLAlchemy detects the change
     meeting.data = new_data
@@ -555,9 +601,7 @@ async def update_meeting_data(
 
     attributes.flag_modified(meeting, "data")
 
-    logger.info(
-        f"[API] Updated fields: {', '.join(updated_fields) if updated_fields else 'none'}"
-    )
+    logger.info(f"[API] Updated fields: {', '.join(updated_fields) if updated_fields else 'none'}")
     logger.debug(f"[API] Final meeting.data after update: {meeting.data}")
 
     await db.commit()
@@ -611,9 +655,7 @@ async def delete_meeting(
 
     # Check if already redacted (idempotency)
     if meeting.data and meeting.data.get("redacted"):
-        logger.info(
-            f"[API] Meeting {internal_meeting_id} already redacted, returning success"
-        )
+        logger.info(f"[API] Meeting {internal_meeting_id} already redacted, returning success")
         return {
             "message": f"Meeting {platform.value}/{native_meeting_id} transcripts already deleted and data anonymized"
         }
@@ -629,14 +671,10 @@ async def delete_meeting(
             detail=f"Meeting not finalized; cannot delete transcripts. Current status: {meeting.status}",
         )
 
-    logger.info(
-        f"[API] User {current_user.id} purging transcripts and anonymizing meeting {internal_meeting_id}"
-    )
+    logger.info(f"[API] User {current_user.id} purging transcripts and anonymizing meeting {internal_meeting_id}")
 
     # Delete transcripts from PostgreSQL
-    stmt_transcripts = select(Transcription).where(
-        Transcription.meeting_id == internal_meeting_id
-    )
+    stmt_transcripts = select(Transcription).where(Transcription.meeting_id == internal_meeting_id)
     result_transcripts = await db.execute(stmt_transcripts)
     transcripts = result_transcripts.scalars().all()
 
@@ -653,13 +691,9 @@ async def delete_meeting(
                 pipe.delete(hash_key)
                 pipe.srem("active_meetings", str(internal_meeting_id))
                 results = await pipe.execute()
-            logger.debug(
-                f"[API] Deleted Redis hash {hash_key} and removed from active_meetings"
-            )
+            logger.debug(f"[API] Deleted Redis hash {hash_key} and removed from active_meetings")
         except Exception as e:
-            logger.error(
-                f"[API] Failed to delete Redis data for meeting {internal_meeting_id}: {e}"
-            )
+            logger.error(f"[API] Failed to delete Redis data for meeting {internal_meeting_id}: {e}")
 
     # Scrub PII from meeting record while preserving telemetry
     original_data = meeting.data or {}
@@ -677,21 +711,15 @@ async def delete_meeting(
     scrubbed_data["redacted"] = True
 
     # Update meeting record with scrubbed data
-    meeting.platform_specific_id = (
-        None  # Clear native meeting ID (this makes constructed_meeting_url return None)
-    )
+    meeting.platform_specific_id = None  # Clear native meeting ID (this makes constructed_meeting_url return None)
     meeting.data = scrubbed_data
 
     # Note: We keep Meeting and MeetingSession records for telemetry
     await db.commit()
 
-    logger.info(
-        f"[API] Successfully purged transcripts and anonymized meeting {internal_meeting_id}"
-    )
+    logger.info(f"[API] Successfully purged transcripts and anonymized meeting {internal_meeting_id}")
 
-    return {
-        "message": f"Meeting {platform.value}/{native_meeting_id} transcripts deleted and data anonymized"
-    }
+    return {"message": f"Meeting {platform.value}/{native_meeting_id} transcripts deleted and data anonymized"}
 
 
 # ============================================================================
@@ -716,6 +744,7 @@ class CFProxyTranscriptionRequest(BaseModel):
 
     session_id: str
     meeting_id: Optional[int] = None
+    audio_key: Optional[str] = None  # R2 key for idempotent storage
     chunk_index: int
     timestamp: int  # Unix timestamp ms
     text: str
@@ -750,16 +779,12 @@ async def ingest_cf_proxy_transcription(
 
     # Verify MeetingToken from Authorization header
     if not token:
-        logger.warning(
-            f"[CF-Proxy] Missing Authorization header for session {request.session_id}"
-        )
+        logger.warning(f"[CF-Proxy] Missing Authorization header for session {request.session_id}")
         raise HTTPException(status_code=401, detail="Missing Authorization header")
 
     claims = verify_meeting_token(token)
     if not claims:
-        logger.warning(
-            f"[CF-Proxy] Invalid MeetingToken for session {request.session_id}"
-        )
+        logger.warning(f"[CF-Proxy] Invalid MeetingToken for session {request.session_id}")
         raise HTTPException(status_code=401, detail="Invalid or expired MeetingToken")
 
     # Verify meeting_id in request matches token claims
@@ -769,14 +794,10 @@ async def ingest_cf_proxy_transcription(
         )
         raise HTTPException(status_code=403, detail="Meeting ID mismatch")
 
-    logger.info(
-        f"[CF-Proxy] Received transcription for session {request.session_id}, chunk {request.chunk_index}"
-    )
+    logger.info(f"[CF-Proxy] Received transcription for session {request.session_id}, chunk {request.chunk_index}")
 
     if not request.text or not request.text.strip():
-        logger.debug(
-            f"[CF-Proxy] Empty transcription for chunk {request.chunk_index}, skipping"
-        )
+        logger.debug(f"[CF-Proxy] Empty transcription for chunk {request.chunk_index}, skipping")
         return {"status": "skipped", "reason": "empty_transcription"}
 
     # Try to find meeting by session_id (stored in MeetingSession)
@@ -791,9 +812,7 @@ async def ingest_cf_proxy_transcription(
 
     if not meeting:
         # Try to find by session_uid
-        stmt = select(MeetingSession).where(
-            MeetingSession.session_uid == request.session_id
-        )
+        stmt = select(MeetingSession).where(MeetingSession.session_uid == request.session_id)
         result = await db.execute(stmt)
         session = result.scalar_one_or_none()
         if session:
@@ -805,56 +824,63 @@ async def ingest_cf_proxy_transcription(
         logger.warning(f"[CF-Proxy] No meeting found for session {request.session_id}")
         return {"status": "error", "reason": "meeting_not_found"}
 
-    # Process segments or full text
-    segments_to_store = []
-    base_timestamp = datetime.fromtimestamp(request.timestamp / 1000, tz=timezone.utc)
-
+    # Build segments JSONB for storage
+    segments_json = None
     if request.segments:
-        for seg in request.segments:
-            segments_to_store.append(
-                {
-                    "start_time": seg.start,
-                    "end_time": seg.end,
-                    "text": seg.text.strip(),
-                    "language": request.language or "en",
-                }
-            )
-    else:
-        # Single segment from full text
-        segments_to_store.append(
+        segments_json = [
             {
-                "start_time": 0.0,
-                "end_time": request.duration or 10.0,
-                "text": request.text.strip(),
-                "language": request.language or "en",
+                "start": seg.start,
+                "end": seg.end,
+                "text": seg.text.strip(),
+                "temperature": seg.temperature,
+                "avg_logprob": seg.avg_logprob,
+                "compression_ratio": seg.compression_ratio,
+                "no_speech_prob": seg.no_speech_prob,
             }
-        )
+            for seg in request.segments
+            if seg.text and seg.text.strip()
+        ]
 
-    # Store transcriptions
-    stored_count = 0
-    for seg_data in segments_to_store:
-        if not seg_data["text"]:
-            continue
+    # Use audio_key for idempotent storage, fallback to session_id+chunk_index
+    audio_key = request.audio_key or f"{request.session_id}/{request.timestamp}-{request.chunk_index}.raw"
 
-        transcription = Transcription(
-            meeting_id=meeting.id,
-            session_uid=request.session_id,
-            start_time=seg_data["start_time"],
-            end_time=seg_data["end_time"],
-            text=seg_data["text"],
-            language=seg_data["language"],
-            speaker=None,  # CF proxy doesn't provide speaker info
-        )
-        db.add(transcription)
-        stored_count += 1
+    # Check if chunk already exists (idempotent)
+    existing_stmt = select(AudioChunk).where(AudioChunk.audio_key == audio_key)
+    existing_result = await db.execute(existing_stmt)
+    existing_chunk = existing_result.scalar_one_or_none()
 
+    if existing_chunk:
+        logger.info(f"[CF-Proxy] Chunk {audio_key} already exists, skipping (idempotent)")
+        return {
+            "status": "skipped",
+            "reason": "duplicate_chunk",
+            "meeting_id": meeting.id,
+            "chunk_id": existing_chunk.id,
+        }
+
+    # Create new AudioChunk record
+    audio_chunk = AudioChunk(
+        meeting_id=meeting.id,
+        session_uid=request.session_id,
+        audio_key=audio_key,
+        chunk_index=request.chunk_index,
+        chunk_timestamp=request.timestamp,
+        duration=request.duration,
+        full_text=request.text.strip() if request.text else None,
+        segments=segments_json,
+        language=request.language,
+        language_probability=request.language_probability,
+    )
+    db.add(audio_chunk)
     await db.commit()
+    await db.refresh(audio_chunk)
 
-    logger.info(f"[CF-Proxy] Stored {stored_count} segments for meeting {meeting.id}")
+    logger.info(f"[CF-Proxy] Stored chunk {request.chunk_index} for meeting {meeting.id} (audio_key: {audio_key})")
 
     return {
         "status": "success",
         "meeting_id": meeting.id,
-        "segments_stored": stored_count,
+        "chunk_id": audio_chunk.id,
+        "audio_key": audio_key,
         "language": request.language,
     }

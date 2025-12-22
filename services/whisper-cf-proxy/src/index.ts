@@ -33,6 +33,7 @@ interface WebhookJob {
   sessionId: string;
   meetingId?: number;
   token?: string;
+  audioKey: string;  // R2 key for idempotent storage
   chunkIndex: number;
   timestamp: number;
   text: string;
@@ -50,7 +51,10 @@ export class WhisperSession extends DurableObject {
   private config: SessionConfig | null = null;
   private chunkIndex = 0;
   private lastFlushTime = Date.now();
-  private readonly BUFFER_DURATION_MS = 10000; // 10 seconds
+  private silentSamples = 0;
+  private readonly BUFFER_DURATION_MS = 60000; // 60 seconds max
+  private readonly SILENCE_THRESHOLD = 0.01; // RMS threshold for silence detection
+  private readonly SILENCE_DURATION_MS = 2000; // 2 seconds of silence triggers flush
   private readonly SAMPLE_RATE = 16000;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -107,12 +111,39 @@ export class WhisperSession extends DurableObject {
     if (message instanceof ArrayBuffer) {
       this.audioBuffer.push(message);
       
-      // Check if we should flush (every BUFFER_DURATION_MS)
+      // Check for silence in this chunk
+      const float32 = new Float32Array(message);
+      const rms = this.calculateRMS(float32);
+      const isSilent = rms < this.SILENCE_THRESHOLD;
+      
+      if (isSilent) {
+        this.silentSamples += float32.length;
+      } else {
+        this.silentSamples = 0;
+      }
+      
       const now = Date.now();
-      if (now - this.lastFlushTime >= this.BUFFER_DURATION_MS) {
+      const timeSinceFlush = now - this.lastFlushTime;
+      const silenceDurationMs = (this.silentSamples / this.SAMPLE_RATE) * 1000;
+      
+      // Flush if: max duration reached OR extended silence detected (with minimum buffer)
+      const shouldFlush = timeSinceFlush >= this.BUFFER_DURATION_MS || 
+        (silenceDurationMs >= this.SILENCE_DURATION_MS && timeSinceFlush >= 5000);
+      
+      if (shouldFlush) {
         await this.flushAudioBuffer(env, ws);
+        this.silentSamples = 0;
       }
     }
+  }
+  
+  private calculateRMS(samples: Float32Array): number {
+    if (samples.length === 0) return 0;
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) {
+      sum += samples[i] * samples[i];
+    }
+    return Math.sqrt(sum / samples.length);
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string) {
@@ -245,6 +276,7 @@ async function processTranscriptionJob(env: Env, job: TranscriptionJob): Promise
       sessionId: job.sessionId,
       meetingId: job.config.meeting_id,
       token: job.config.token,
+      audioKey: job.audioKey,  // Include R2 key for idempotent storage
       chunkIndex: job.chunkIndex,
       timestamp: job.timestamp,
       text: result.text,
@@ -268,6 +300,7 @@ async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
   const payload = {
     session_id: job.sessionId,
     meeting_id: job.meetingId,
+    audio_key: job.audioKey,  // R2 key for idempotent storage
     chunk_index: job.chunkIndex,
     timestamp: job.timestamp,
     text: job.text,
