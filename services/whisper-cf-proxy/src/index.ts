@@ -119,6 +119,14 @@ export class WhisperSession extends DurableObject {
   }
 
   async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
+    // Use blockConcurrencyWhile to serialize message processing
+    // This prevents race conditions where multiple messages check lastFlushTime simultaneously
+    await this.ctx.blockConcurrencyWhile(async () => {
+      await this.processMessage(ws, message);
+    });
+  }
+
+  private async processMessage(ws: WebSocket, message: ArrayBuffer | string) {
     const env = this.env as Env;
 
     // Handle JSON config message
