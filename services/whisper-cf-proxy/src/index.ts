@@ -52,6 +52,7 @@ export class WhisperSession extends DurableObject {
   private chunkIndex = 0;
   private lastFlushTime = Date.now();
   private silentSamples = 0;
+  private stateLoaded = false;
   private readonly BUFFER_DURATION_MS = 60000; // 60 seconds max
   private readonly SILENCE_THRESHOLD = 0.01; // RMS threshold for silence detection
   private readonly SILENCE_DURATION_MS = 2000; // 2 seconds of silence triggers flush
@@ -59,6 +60,39 @@ export class WhisperSession extends DurableObject {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // Load persisted state on construction
+    this.ctx.blockConcurrencyWhile(async () => {
+      await this.loadState();
+    });
+  }
+
+  private async loadState() {
+    if (this.stateLoaded) return;
+    
+    const stored = await this.ctx.storage.get<{
+      config: SessionConfig | null;
+      chunkIndex: number;
+      lastFlushTime: number;
+      silentSamples: number;
+    }>("state");
+    
+    if (stored) {
+      this.config = stored.config;
+      this.chunkIndex = stored.chunkIndex;
+      this.lastFlushTime = stored.lastFlushTime;
+      this.silentSamples = stored.silentSamples;
+      console.log(`[WhisperSession] Restored state: chunkIndex=${this.chunkIndex}, lastFlush=${Date.now() - this.lastFlushTime}ms ago`);
+    }
+    this.stateLoaded = true;
+  }
+
+  private async saveState() {
+    await this.ctx.storage.put("state", {
+      config: this.config,
+      chunkIndex: this.chunkIndex,
+      lastFlushTime: this.lastFlushTime,
+      silentSamples: this.silentSamples,
+    });
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -93,6 +127,7 @@ export class WhisperSession extends DurableObject {
         const data = JSON.parse(message);
         if (data.uid) {
           this.config = data as SessionConfig;
+          await this.saveState(); // Persist config
           // Send server ready response (matching WhisperLive protocol)
           ws.send(JSON.stringify({
             uid: data.uid,
@@ -201,6 +236,7 @@ export class WhisperSession extends DurableObject {
     // Clear buffer
     this.audioBuffer = [];
     this.lastFlushTime = Date.now();
+    await this.saveState(); // Persist state after flush
 
     // Send acknowledgment
     ws.send(JSON.stringify({
