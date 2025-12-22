@@ -14,6 +14,7 @@ on:
       - 'services/admin-api/**'
       - 'services/api-gateway/**'
       - 'services/bot-manager/**'
+      - 'services/google-integration/**'
       - 'services/transcription-collector/**'
       - 'libs/shared-models/**'
       - '.github/workflows/build-services.yaml'
@@ -29,6 +30,7 @@ jobs:
       admin-api: ${{ steps.changes.outputs.admin-api }}
       api-gateway: ${{ steps.changes.outputs.api-gateway }}
       bot-manager: ${{ steps.changes.outputs.bot-manager }}
+      google-integration: ${{ steps.changes.outputs.google-integration }}
       transcription-collector: ${{ steps.changes.outputs.transcription-collector }}
       shared-models: ${{ steps.changes.outputs.shared-models }}
       any-changed: ${{ steps.changes.outputs.any-changed }}
@@ -48,6 +50,7 @@ jobs:
               echo "admin-api=true" >> $GITHUB_OUTPUT
               echo "api-gateway=true" >> $GITHUB_OUTPUT
               echo "bot-manager=true" >> $GITHUB_OUTPUT
+              echo "google-integration=true" >> $GITHUB_OUTPUT
               echo "transcription-collector=true" >> $GITHUB_OUTPUT
               echo "shared-models=true" >> $GITHUB_OUTPUT
               echo "any-changed=true" >> $GITHUB_OUTPUT
@@ -76,6 +79,9 @@ jobs:
           if echo "$CHANGED_FILES" | grep -q "^services/bot-manager/"; then
             echo "bot-manager=true" >> $GITHUB_OUTPUT
           fi
+          if echo "$CHANGED_FILES" | grep -q "^services/google-integration/"; then
+            echo "google-integration=true" >> $GITHUB_OUTPUT
+          fi
           if echo "$CHANGED_FILES" | grep -q "^services/transcription-collector/"; then
             echo "transcription-collector=true" >> $GITHUB_OUTPUT
           fi
@@ -86,11 +92,12 @@ jobs:
             echo "admin-api=true" >> $GITHUB_OUTPUT
             echo "api-gateway=true" >> $GITHUB_OUTPUT
             echo "bot-manager=true" >> $GITHUB_OUTPUT
+            echo "google-integration=true" >> $GITHUB_OUTPUT
             echo "transcription-collector=true" >> $GITHUB_OUTPUT
           fi
 
           # Check if any service changed
-          if echo "$CHANGED_FILES" | grep -qE "^(services/(admin-api|api-gateway|bot-manager|transcription-collector)/|libs/shared-models/)"; then
+          if echo "$CHANGED_FILES" | grep -qE "^(services/(admin-api|api-gateway|bot-manager|google-integration|transcription-collector)/|libs/shared-models/)"; then
             echo "any-changed=true" >> $GITHUB_OUTPUT
           fi
 
@@ -220,6 +227,48 @@ jobs:
           cache-to: type=gha,mode=max,scope=bot-manager
           platforms: linux/amd64
 
+  build-google-integration:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.google-integration == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-google-integration
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./services/google-integration/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=google-integration
+          cache-to: type=gha,mode=max,scope=google-integration
+          platforms: linux/amd64
+
   build-transcription-collector:
     needs: detect-changes
     if: needs.detect-changes.outputs.transcription-collector == 'true'
@@ -268,6 +317,7 @@ jobs:
       - build-admin-api
       - build-api-gateway
       - build-bot-manager
+      - build-google-integration
       - build-transcription-collector
     if: always() && needs.detect-changes.outputs.any-changed == 'true'
     runs-on: ubuntu-latest
@@ -297,6 +347,12 @@ jobs:
             echo "| bot-manager | skipped (no changes) |" >> $GITHUB_STEP_SUMMARY
           fi
           
+          if [ "${{ needs.detect-changes.outputs.google-integration }}" == "true" ]; then
+            echo "| google-integration | ${{ needs.build-google-integration.result }} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| google-integration | skipped (no changes) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           if [ "${{ needs.detect-changes.outputs.transcription-collector }}" == "true" ]; then
             echo "| transcription-collector | ${{ needs.build-transcription-collector.result }} |" >> $GITHUB_STEP_SUMMARY
           else
@@ -309,6 +365,7 @@ jobs:
       - build-admin-api
       - build-api-gateway
       - build-bot-manager
+      - build-google-integration
       - build-transcription-collector
     if: failure()
     runs-on: ubuntu-latest
@@ -319,6 +376,7 @@ jobs:
           [ "${{ needs.build-admin-api.result }}" == "failure" ] && FAILED="${FAILED}• admin-api%0A"
           [ "${{ needs.build-api-gateway.result }}" == "failure" ] && FAILED="${FAILED}• api-gateway%0A"
           [ "${{ needs.build-bot-manager.result }}" == "failure" ] && FAILED="${FAILED}• bot-manager%0A"
+          [ "${{ needs.build-google-integration.result }}" == "failure" ] && FAILED="${FAILED}• google-integration%0A"
           [ "${{ needs.build-transcription-collector.result }}" == "failure" ] && FAILED="${FAILED}• transcription-collector%0A"
           
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \

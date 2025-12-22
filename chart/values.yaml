@@ -96,6 +96,24 @@ transcription-collector:
     REDIS_SEGMENT_TTL: "3600"
     REDIS_CLEANUP_THRESHOLD: "86400"
 
+google-integration:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ""
+    tag: ""
+  port: 8000
+  redirectUri: "https://vomeet.io/google/callback"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    LOG_LEVEL: INFO
+
 # ============================================================================
 # CloudNativePG (CNPG) PostgreSQL
 # ============================================================================

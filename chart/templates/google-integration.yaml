@@ -1,5 +1,5 @@
-{{- if index .Values "api-gateway" "enabled" }}
-{{- $svc := "api-gateway" }}
+{{- if index .Values "google-integration" "enabled" }}
+{{- $svc := "google-integration" }}
 {{- $config := index .Values $svc }}
 ---
 apiVersion: apps/v1
@@ -39,16 +39,34 @@ spec:
               containerPort: {{ $config.port }}
               protocol: TCP
           env:
-            - name: ADMIN_API_URL
-              value: http://{{ include "vomeet.fullname" . }}-admin-api:8001
-            - name: BOT_MANAGER_URL
-              value: http://{{ include "vomeet.fullname" . }}-bot-manager:8080
-            - name: TRANSCRIPTION_COLLECTOR_URL
-              value: http://{{ include "vomeet.fullname" . }}-transcription-collector:8000
-            - name: GOOGLE_INTEGRATION_URL
-              value: http://{{ include "vomeet.fullname" . }}-google-integration:8000
-            - name: REDIS_URL
-              value: {{ include "vomeet.redisUrl" . }}
+            - name: DB_HOST
+              value: {{ include "vomeet.dbHost" . }}
+            - name: DB_PORT
+              value: {{ include "vomeet.dbPort" . | quote }}
+            - name: DB_NAME
+              value: {{ .Values.global.database.name }}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-db-credentials
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-db-credentials
+                  key: password
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-google-oauth
+                  key: client-id
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-google-oauth
+                  key: client-secret
+            - name: GOOGLE_REDIRECT_URI
+              value: {{ $config.redirectUri | default "https://vomeet.io/google/callback" }}
             {{- range $key, $value := $config.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}

@@ -53,7 +53,7 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          SERVICES="admin-api api-gateway bot-manager transcription-collector"
+          SERVICES="admin-api api-gateway bot-manager google-integration transcription-collector"
           MISSING=""
           for svc in $SERVICES; do
             IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${svc}:${TAG}"
@@ -135,12 +135,14 @@ jobs:
           kubectl rollout restart deployment/vomeet-admin-api -n ${{ env.NAMESPACE }}
           kubectl rollout restart deployment/vomeet-api-gateway -n ${{ env.NAMESPACE }}
           kubectl rollout restart deployment/vomeet-bot-manager -n ${{ env.NAMESPACE }}
+          kubectl rollout restart deployment/vomeet-google-integration -n ${{ env.NAMESPACE }}
           kubectl rollout restart deployment/vomeet-transcription-collector -n ${{ env.NAMESPACE }}
           
           echo "⏳ Waiting for rollouts to complete..."
           kubectl rollout status deployment/vomeet-admin-api -n ${{ env.NAMESPACE }} --timeout=120s
           kubectl rollout status deployment/vomeet-api-gateway -n ${{ env.NAMESPACE }} --timeout=120s
           kubectl rollout status deployment/vomeet-bot-manager -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/vomeet-google-integration -n ${{ env.NAMESPACE }} --timeout=120s
           kubectl rollout status deployment/vomeet-transcription-collector -n ${{ env.NAMESPACE }} --timeout=120s
           echo "✅ All rollouts complete!"
 

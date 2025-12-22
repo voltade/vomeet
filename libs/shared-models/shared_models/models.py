@@ -160,3 +160,27 @@ class AudioChunk(Base):
     meeting = relationship("Meeting")
 
     __table_args__ = (Index("ix_audio_chunks_meeting_chunk", "meeting_id", "chunk_index"),)
+
+
+class GoogleIntegration(Base):
+    """
+    Stores Google OAuth tokens for users to enable calendar integration.
+    Allows auto-joining meetings from user's Google Calendar.
+    """
+
+    __tablename__ = "google_integrations"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    google_user_id = Column(String(255), nullable=False)  # Google's unique user ID
+    email = Column(String(255), nullable=False)  # User's Google email
+    name = Column(String(255), nullable=True)  # User's display name
+    picture = Column(Text, nullable=True)  # Profile picture URL
+    access_token = Column(Text, nullable=False)  # OAuth access token (encrypted in production)
+    refresh_token = Column(Text, nullable=True)  # OAuth refresh token (encrypted in production)
+    token_expires_at = Column(DateTime, nullable=True)  # When access token expires
+    scopes = Column(JSONB, nullable=True)  # List of granted scopes
+    auto_join_enabled = Column(sqlalchemy.Boolean, nullable=False, default=False)  # Auto-join meetings
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User")

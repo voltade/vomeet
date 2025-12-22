@@ -884,3 +884,90 @@ class UserAnalyticsResponse(BaseModel):
 
 
 # --- END Analytics Schemas ---
+
+
+# --- Google Calendar Integration Schemas ---
+
+
+class GoogleAuthUrlResponse(BaseModel):
+    """Response containing Google OAuth authorization URL"""
+
+    auth_url: str = Field(..., description="URL to redirect user to for Google OAuth consent")
+
+
+class GoogleCallbackRequest(BaseModel):
+    """Request body for Google OAuth callback"""
+
+    code: str = Field(..., description="Authorization code from Google OAuth callback")
+    state: Optional[str] = Field(None, description="State parameter for CSRF protection")
+
+
+class GoogleIntegrationResponse(BaseModel):
+    """Response showing Google integration status"""
+
+    id: int
+    user_id: int
+    google_user_id: str
+    email: str
+    name: Optional[str]
+    picture: Optional[str]
+    scopes: Optional[List[str]]
+    auto_join_enabled: bool
+    connected_at: datetime = Field(..., alias="created_at")
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+
+class GoogleIntegrationUpdate(BaseModel):
+    """Request to update Google integration settings"""
+
+    auto_join_enabled: Optional[bool] = Field(None, description="Enable/disable auto-join for meetings")
+
+
+class CalendarEventAttendee(BaseModel):
+    """Attendee information from a calendar event"""
+
+    email: str
+    display_name: Optional[str] = None
+    response_status: Optional[str] = None  # "accepted", "declined", "tentative", "needsAction"
+    is_organizer: bool = False
+    is_self: bool = False
+
+
+class CalendarEvent(BaseModel):
+    """Calendar event with Google Meet information"""
+
+    id: str = Field(..., description="Google Calendar event ID")
+    summary: Optional[str] = Field(None, description="Event title")
+    description: Optional[str] = Field(None, description="Event description")
+    start_time: datetime = Field(..., description="Event start time")
+    end_time: datetime = Field(..., description="Event end time")
+    google_meet_link: Optional[str] = Field(None, description="Google Meet URL if present")
+    native_meeting_id: Optional[str] = Field(None, description="Extracted Google Meet code (xxx-yyyy-zzz)")
+    location: Optional[str] = Field(None, description="Event location")
+    attendees: List[CalendarEventAttendee] = Field(default_factory=list)
+    organizer_email: Optional[str] = None
+    status: str = Field("confirmed", description="Event status: confirmed, tentative, cancelled")
+    html_link: Optional[str] = Field(None, description="Link to view event in Google Calendar")
+
+
+class CalendarEventsResponse(BaseModel):
+    """Response containing calendar events with Google Meet links"""
+
+    events: List[CalendarEvent] = Field(default_factory=list)
+    next_page_token: Optional[str] = None
+    total_count: int = 0
+
+
+class CalendarAutoJoinRequest(BaseModel):
+    """Request to auto-join a specific calendar event"""
+
+    event_id: str = Field(..., description="Google Calendar event ID to join")
+    bot_name: Optional[str] = Field(None, description="Custom name for the bot")
+    language: Optional[str] = Field(None, description="Transcription language code")
+
+
+# --- END Google Calendar Integration Schemas ---

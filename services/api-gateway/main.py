@@ -45,6 +45,7 @@ load_dotenv()
 ADMIN_API_URL = os.getenv("ADMIN_API_URL")
 BOT_MANAGER_URL = os.getenv("BOT_MANAGER_URL")
 TRANSCRIPTION_COLLECTOR_URL = os.getenv("TRANSCRIPTION_COLLECTOR_URL")
+GOOGLE_INTEGRATION_URL = os.getenv("GOOGLE_INTEGRATION_URL")
 
 # --- Validation at startup ---
 if not all([ADMIN_API_URL, BOT_MANAGER_URL, TRANSCRIPTION_COLLECTOR_URL]):
@@ -57,9 +58,7 @@ if not all([ADMIN_API_URL, BOT_MANAGER_URL, TRANSCRIPTION_COLLECTOR_URL]):
         }.items()
         if not var_value
     ]
-    raise ValueError(
-        f"Missing required environment variables: {', '.join(missing_vars)}"
-    )
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 # Response Models
 # class BotResponseModel(BaseModel): ...
@@ -71,9 +70,7 @@ if not all([ADMIN_API_URL, BOT_MANAGER_URL, TRANSCRIPTION_COLLECTOR_URL]):
 # class TokenModel(BaseModel): ...
 
 # Security Schemes for OpenAPI
-api_key_scheme = APIKeyHeader(
-    name="X-API-Key", description="API Key for client operations", auto_error=False
-)
+api_key_scheme = APIKeyHeader(name="X-API-Key", description="API Key for client operations", auto_error=False)
 admin_api_key_scheme = APIKeyHeader(
     name="X-Admin-API-Key", description="API Key for admin operations", auto_error=False
 )
@@ -172,9 +169,7 @@ async def startup_event():
     app.state.http_client = httpx.AsyncClient()
     # Initialize Redis for Pub/Sub used by WS
     redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-    app.state.redis = await aioredis.from_url(
-        redis_url, encoding="utf-8", decode_responses=True
-    )
+    app.state.redis = await aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True)
 
 
 @app.on_event("shutdown")
@@ -187,17 +182,11 @@ async def shutdown_event():
 
 
 # --- Helper for Forwarding ---
-async def forward_request(
-    client: httpx.AsyncClient, method: str, url: str, request: Request
-) -> Response:
+async def forward_request(client: httpx.AsyncClient, method: str, url: str, request: Request) -> Response:
     # Copy original headers, converting to a standard dict
     # Exclude host, content-length, transfer-encoding as they are handled by httpx/server
     excluded_headers = {"host", "content-length", "transfer-encoding"}
-    headers = {
-        k.lower(): v
-        for k, v in request.headers.items()
-        if k.lower() not in excluded_headers
-    }
+    headers = {k.lower(): v for k, v in request.headers.items() if k.lower() not in excluded_headers}
 
     # Debug logging for original request headers
     print(f"DEBUG: Original request headers: {dict(request.headers)}")
@@ -221,9 +210,7 @@ async def forward_request(
             headers["x-api-key"] = client_key
             print(f"DEBUG: Forwarding x-api-key header: {client_key[:5]}...")
         else:
-            print(
-                f"DEBUG: No x-api-key header found in request. Headers: {dict(request.headers)}"
-            )
+            print(f"DEBUG: No x-api-key header found in request. Headers: {dict(request.headers)}")
 
     # Debug logging for forwarded headers
     print(f"DEBUG: Forwarded headers: {headers}")
@@ -323,9 +310,7 @@ async def stop_bot_proxy(platform: Platform, native_meeting_id: str, request: Re
     dependencies=[Depends(api_key_scheme)],
 )
 # Need to accept request body for PUT
-async def update_bot_config_proxy(
-    platform: Platform, native_meeting_id: str, request: Request
-):
+async def update_bot_config_proxy(platform: Platform, native_meeting_id: str, request: Request):
     """Forward request to Bot Manager to update bot config."""
     url = f"{BOT_MANAGER_URL}/bots/{platform.value}/{native_meeting_id}/config"
     # forward_request handles reading and passing the body from the original request
@@ -376,9 +361,7 @@ async def get_meetings_proxy(request: Request):
     response_model=TranscriptionResponse,
     dependencies=[Depends(api_key_scheme)],
 )
-async def get_transcript_proxy(
-    platform: Platform, native_meeting_id: str, request: Request
-):
+async def get_transcript_proxy(platform: Platform, native_meeting_id: str, request: Request):
     """Forward request to Transcription Collector to get a transcript."""
     url = f"{TRANSCRIPTION_COLLECTOR_URL}/transcripts/{platform.value}/{native_meeting_id}"
     return await forward_request(app.state.http_client, "GET", url, request)
@@ -407,9 +390,7 @@ async def get_transcript_proxy(
         },
     },
 )
-async def update_meeting_data_proxy(
-    platform: Platform, native_meeting_id: str, request: Request
-):
+async def update_meeting_data_proxy(platform: Platform, native_meeting_id: str, request: Request):
     """Forward request to Transcription Collector to update meeting data."""
     url = f"{TRANSCRIPTION_COLLECTOR_URL}/meetings/{platform.value}/{native_meeting_id}"
     return await forward_request(app.state.http_client, "PATCH", url, request)
@@ -422,9 +403,7 @@ async def update_meeting_data_proxy(
     description="Purges transcripts and anonymizes meeting data for finalized meetings. Only works for completed or failed meetings. Preserves meeting records for telemetry.",
     dependencies=[Depends(api_key_scheme)],
 )
-async def delete_meeting_proxy(
-    platform: Platform, native_meeting_id: str, request: Request
-):
+async def delete_meeting_proxy(platform: Platform, native_meeting_id: str, request: Request):
     """Forward request to Transcription Collector to purge transcripts and anonymize meeting data."""
     url = f"{TRANSCRIPTION_COLLECTOR_URL}/meetings/{platform.value}/{native_meeting_id}"
     return await forward_request(app.state.http_client, "DELETE", url, request)
@@ -473,9 +452,7 @@ async def websocket_multiplex(ws: WebSocket):
     api_key = ws.headers.get("x-api-key") or ws.query_params.get("api_key")
     if not api_key:
         try:
-            await ws.send_text(
-                json.dumps({"type": "error", "error": "missing_api_key"})
-            )
+            await ws.send_text(json.dumps({"type": "error", "error": "missing_api_key"}))
         finally:
             await ws.close(code=4401)  # Unauthorized
         return
@@ -486,9 +463,7 @@ async def websocket_multiplex(ws: WebSocket):
     sub_tasks: Dict[Tuple[str, str], asyncio.Task] = {}
     subscribed_meetings: Set[Tuple[str, str]] = set()
 
-    async def subscribe_meeting(
-        platform: str, native_id: str, user_id: str, meeting_id: str
-    ):
+    async def subscribe_meeting(platform: str, native_id: str, user_id: str, meeting_id: str):
         key = (platform, native_id, user_id)
         if key in subscribed_meetings:
             return
@@ -533,9 +508,7 @@ async def websocket_multiplex(ws: WebSocket):
             try:
                 msg = json.loads(raw)
             except Exception:
-                await ws.send_text(
-                    json.dumps({"type": "error", "error": "invalid_json"})
-                )
+                await ws.send_text(json.dumps({"type": "error", "error": "invalid_json"}))
                 continue
 
             action = msg.get("action")
@@ -573,9 +546,7 @@ async def websocket_multiplex(ws: WebSocket):
                             plat = str(m.get("platform", "")).strip()
                             nid = str(m.get("native_id", "")).strip()
                             if plat and nid:
-                                payload_meetings.append(
-                                    {"platform": plat, "native_meeting_id": nid}
-                                )
+                                payload_meetings.append({"platform": plat, "native_meeting_id": nid})
                     if not payload_meetings:
                         await ws.send_text(
                             json.dumps(
@@ -590,9 +561,7 @@ async def websocket_multiplex(ws: WebSocket):
 
                     url = f"{TRANSCRIPTION_COLLECTOR_URL}/ws/authorize-subscribe"
                     headers = {"X-API-Key": api_key}
-                    resp = await app.state.http_client.post(
-                        url, headers=headers, json={"meetings": payload_meetings}
-                    )
+                    resp = await app.state.http_client.post(url, headers=headers, json={"meetings": payload_meetings})
                     if resp.status_code != 200:
                         await ws.send_text(
                             json.dumps(
@@ -628,9 +597,7 @@ async def websocket_multiplex(ws: WebSocket):
                         if plat and nid and user_id and meeting_id:
                             await subscribe_meeting(plat, nid, user_id, meeting_id)
                             subscribed.append({"platform": plat, "native_id": nid})
-                    await ws.send_text(
-                        json.dumps({"type": "subscribed", "meetings": subscribed})
-                    )
+                    await ws.send_text(json.dumps({"type": "subscribed", "meetings": subscribed}))
                 except Exception as e:
                     await ws.send_text(
                         json.dumps(
@@ -665,9 +632,7 @@ async def websocket_multiplex(ws: WebSocket):
                     plat = str(m.get("platform", "")).strip()
                     nid = str(m.get("native_id", "")).strip()
                     if not plat or not nid:
-                        errors.append(
-                            f"meetings[{idx}] missing 'platform' or 'native_id'"
-                        )
+                        errors.append(f"meetings[{idx}] missing 'platform' or 'native_id'")
                         continue
 
                     # Find the subscription key that matches platform and native_id
@@ -696,16 +661,12 @@ async def websocket_multiplex(ws: WebSocket):
                     )
                     continue
 
-                await ws.send_text(
-                    json.dumps({"type": "unsubscribed", "meetings": unsubscribed})
-                )
+                await ws.send_text(json.dumps({"type": "unsubscribed", "meetings": unsubscribed}))
 
             elif action == "ping":
                 await ws.send_text(json.dumps({"type": "pong"}))
             else:
-                await ws.send_text(
-                    json.dumps({"type": "error", "error": "unknown_action"})
-                )
+                await ws.send_text(json.dumps({"type": "error", "error": "unknown_action"}))
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -756,9 +717,26 @@ async def transcription_webhook(request: Request):
                 headers=dict(response.headers),
             )
         except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=502, detail=f"Transcription collector error: {str(e)}"
-            )
+            raise HTTPException(status_code=502, detail=f"Transcription collector error: {str(e)}")
+
+
+# --- Google Calendar Integration Routes ---
+@app.api_route(
+    "/google/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE"],
+    tags=["Google Integration"],
+    summary="Google Calendar integration endpoints",
+    dependencies=[Depends(api_key_scheme)],
+)
+async def google_integration_proxy(path: str, request: Request):
+    """Forward requests to Google Integration microservice."""
+    if not GOOGLE_INTEGRATION_URL:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google Integration service not configured",
+        )
+    url = f"{GOOGLE_INTEGRATION_URL}/{path}"
+    return await forward_request(app.state.http_client, request.method, url, request)
 
 
 # --- Main Execution ---

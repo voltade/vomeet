@@ -10,6 +10,7 @@ services:
       - ADMIN_API_URL=http://admin-api:8001
       - BOT_MANAGER_URL=http://bot-manager:8080
       - TRANSCRIPTION_COLLECTOR_URL=http://transcription-collector:8000
+      - GOOGLE_INTEGRATION_URL=http://google-integration:8000
       - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=DEBUG
     init: true
@@ -19,6 +20,8 @@ services:
       bot-manager:
         condition: service_started
       transcription-collector:
+        condition: service_started
+      google-integration:
         condition: service_started
     networks:
       - vomeet_default
@@ -37,6 +40,30 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - ADMIN_API_TOKEN=${ADMIN_API_TOKEN}
+      - LOG_LEVEL=DEBUG
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vomeet_default
+    restart: unless-stopped
+
+  google-integration:
+    build:
+      context: .
+      dockerfile: services/google-integration/Dockerfile
+    ports:
+      - "${GOOGLE_INTEGRATION_HOST_PORT:-8058}:8000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=vomeet
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-https://vomeet.io/google/callback}
       - LOG_LEVEL=DEBUG
     init: true
     depends_on:
