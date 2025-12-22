@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Relative import for API_KEY_NAME from the service's config.py
 from config import API_KEY_NAME
+
 # Imports from shared libraries
 from shared_models.database import get_db
 from shared_models.models import APIToken, User
@@ -14,11 +15,15 @@ logger = logging.getLogger(__name__)
 
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
-async def get_current_user(api_key: str = Security(api_key_header),
-                           db: AsyncSession = Depends(get_db)) -> User:
+
+async def get_current_user(
+    api_key: str = Security(api_key_header), db: AsyncSession = Depends(get_db)
+) -> User:
     """Dependency to verify X-API-Key and return the associated User."""
     if not api_key:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing API token")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Missing API token"
+        )
 
     # Find the token in the database
     result = await db.execute(
@@ -31,9 +36,8 @@ async def get_current_user(api_key: str = Security(api_key_header),
     if not token_user:
         logger.warning(f"Invalid API token provided: {api_key[:10]}...")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid API token"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API token"
         )
 
     _token_obj, user_obj = token_user
-    return user_obj 
+    return user_obj

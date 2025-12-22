@@ -300,7 +300,9 @@ class BatchedInferencePipeline:
         batch_size: int = 8,
         hotwords: Optional[str] = None,
         language_detection_threshold: Optional[float] = 0.5,
-        language_detection_segments: int = int(os.getenv('LANGUAGE_DETECTION_SEGMENTS', '10')), 
+        language_detection_segments: int = int(
+            os.getenv("LANGUAGE_DETECTION_SEGMENTS", "10")
+        ),
     ) -> Tuple[Iterable[Segment], TranscriptionInfo]:
         """transcribe audio in chunks in batched fashion and return with language info.
 
@@ -378,11 +380,15 @@ class BatchedInferencePipeline:
             - a generator over transcribed segments
             - an instance of TranscriptionInfo
         """
-        
-        # --- Added Logging --- 
-        vad_threshold_env = float(os.getenv('VAD_FILTER_THRESHOLD', '0.5'))
-        print(f"[WhisperLive Transcriber] Using LANGUAGE_DETECTION_SEGMENTS: {language_detection_segments}")
-        print(f"[WhisperLive Transcriber] Using VAD_FILTER_THRESHOLD: {vad_threshold_env}")
+
+        # --- Added Logging ---
+        vad_threshold_env = float(os.getenv("VAD_FILTER_THRESHOLD", "0.5"))
+        print(
+            f"[WhisperLive Transcriber] Using LANGUAGE_DETECTION_SEGMENTS: {language_detection_segments}"
+        )
+        print(
+            f"[WhisperLive Transcriber] Using VAD_FILTER_THRESHOLD: {vad_threshold_env}"
+        )
         # --- End Added Logging ---
 
         sampling_rate = self.model.feature_extractor.sampling_rate
@@ -404,9 +410,11 @@ class BatchedInferencePipeline:
             if vad_filter:
                 if vad_parameters is None:
                     # Read VAD threshold from env var with default of 0.5
-                    vad_threshold_env = float(os.getenv('VAD_FILTER_THRESHOLD', '0.5'))
-                    print(f"[WhisperLive Transcriber] VAD parameters not provided, using threshold from env: {vad_threshold_env}") # Added log
-                    
+                    vad_threshold_env = float(os.getenv("VAD_FILTER_THRESHOLD", "0.5"))
+                    print(
+                        f"[WhisperLive Transcriber] VAD parameters not provided, using threshold from env: {vad_threshold_env}"
+                    )  # Added log
+
                     vad_parameters = VadOptions(
                         max_speech_duration_s=chunk_length,
                         min_silence_duration_ms=160,
@@ -414,12 +422,18 @@ class BatchedInferencePipeline:
                     )
                 elif isinstance(vad_parameters, dict):
                     # Use provided dict threshold if present, otherwise use env var
-                    if 'threshold' not in vad_parameters:
-                         vad_threshold_env = float(os.getenv('VAD_FILTER_THRESHOLD', '0.5'))
-                         print(f"[WhisperLive Transcriber] VAD threshold not in dict, using threshold from env: {vad_threshold_env}") # Added log
-                         vad_parameters['threshold'] = vad_threshold_env
+                    if "threshold" not in vad_parameters:
+                        vad_threshold_env = float(
+                            os.getenv("VAD_FILTER_THRESHOLD", "0.5")
+                        )
+                        print(
+                            f"[WhisperLive Transcriber] VAD threshold not in dict, using threshold from env: {vad_threshold_env}"
+                        )  # Added log
+                        vad_parameters["threshold"] = vad_threshold_env
                     else:
-                        print(f"[WhisperLive Transcriber] Using VAD threshold from provided dict: {vad_parameters['threshold']}") # Added log
+                        print(
+                            f"[WhisperLive Transcriber] Using VAD threshold from provided dict: {vad_parameters['threshold']}"
+                        )  # Added log
 
                     # Ensure VadOptions is created from the possibly updated dict
                     vad_parameters = VadOptions(
@@ -427,7 +441,9 @@ class BatchedInferencePipeline:
                     )
                 # If vad_parameters is already VadOptions, use its threshold
                 elif isinstance(vad_parameters, VadOptions):
-                     print(f"[WhisperLive Transcriber] Using VAD threshold from provided VadOptions object: {vad_parameters.threshold}") # Added log
+                    print(
+                        f"[WhisperLive Transcriber] Using VAD threshold from provided VadOptions object: {vad_parameters.threshold}"
+                    )  # Added log
 
                 active_segments = get_speech_timestamps(audio, vad_parameters)
                 clip_timestamps = merge_segments(active_segments, vad_parameters)
@@ -756,7 +772,9 @@ class WhisperModel:
         hallucination_silence_threshold: Optional[float] = None,
         hotwords: Optional[str] = None,
         language_detection_threshold: Optional[float] = 0.5,
-        language_detection_segments: int = int(os.getenv('LANGUAGE_DETECTION_SEGMENTS', '10')), 
+        language_detection_segments: int = int(
+            os.getenv("LANGUAGE_DETECTION_SEGMENTS", "10")
+        ),
     ) -> Tuple[Iterable[Segment], TranscriptionInfo]:
         """Transcribes an input file.
 
@@ -1322,23 +1340,25 @@ class WhisperModel:
                 all_tokens.extend(tokens)
                 idx += 1
 
-                all_segments.append(Segment(
-                    id=idx,
-                    seek=previous_seek,
-                    start=segment["start"],
-                    end=segment["end"],
-                    text=text,
-                    tokens=tokens,
-                    temperature=temperature,
-                    avg_logprob=avg_logprob,
-                    compression_ratio=compression_ratio,
-                    no_speech_prob=result.no_speech_prob,
-                    words=(
-                        [Word(**word) for word in segment["words"]]
-                        if options.word_timestamps
-                        else None
-                    ),
-                ))
+                all_segments.append(
+                    Segment(
+                        id=idx,
+                        seek=previous_seek,
+                        start=segment["start"],
+                        end=segment["end"],
+                        text=text,
+                        tokens=tokens,
+                        temperature=temperature,
+                        avg_logprob=avg_logprob,
+                        compression_ratio=compression_ratio,
+                        no_speech_prob=result.no_speech_prob,
+                        words=(
+                            [Word(**word) for word in segment["words"]]
+                            if options.word_timestamps
+                            else None
+                        ),
+                    )
+                )
 
             if (
                 not options.condition_on_previous_text
@@ -1767,9 +1787,9 @@ class WhisperModel:
             languege_probability: Probability of the detected language.
             all_language_probs: List of tuples with all language names and probabilities.
         """
-        assert (
-            audio is not None or features is not None
-        ), "Either `audio` or `features` must be provided."
+        assert audio is not None or features is not None, (
+            "Either `audio` or `features` must be provided."
+        )
 
         if audio is not None:
             if vad_filter:

@@ -11,4 +11,4 @@ A comprehensive testing library for the Vomeet client that provides:
 from test_suite import TestSuite
 from bot import Bot
 
-__all__ = ['TestSuite', 'Bot']
+__all__ = ["TestSuite", "Bot"]

@@ -38,7 +38,7 @@ setup(
             "Audio-Transcription-Chrome",
             "Audio-Transcription-Firefox",
             "requirements",
-            "whisper-finetuning"
+            "whisper-finetuning",
         )
     ),
     install_requires=[
@@ -54,7 +54,7 @@ setup(
         "openai-whisper==20240930",
         "kaldialign",
         "soundfile",
-        "tokenizers==0.20.3"
+        "tokenizers==0.20.3",
     ],
-    python_requires=">=3.8"
+    python_requires=">=3.8",
 )

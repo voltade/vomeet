@@ -31,7 +31,9 @@ async def enforce_user_concurrency_limit(
         logger.error(
             f"Failed to count running bots for user {user_id}: {e}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail="Failed to verify current bot count.")
+        raise HTTPException(
+            status_code=500, detail="Failed to verify current bot count."
+        )
 
     user_limit = getattr(user, "max_concurrent_bots", None)
     logger.info(
@@ -40,7 +42,9 @@ async def enforce_user_concurrency_limit(
 
     if user_limit is None:
         logger.error(f"User {user_id} missing 'max_concurrent_bots' attribute.")
-        raise HTTPException(status_code=500, detail="User configuration error: Bot limit not set.")
+        raise HTTPException(
+            status_code=500, detail="User configuration error: Bot limit not set."
+        )
 
     if current_bot_count >= int(user_limit):
         logger.warning(
@@ -66,15 +70,20 @@ async def count_user_active_bots(user_id: int) -> int:
         async with async_session_local() as db:
             result = await db.execute(
                 Meeting.__table__.count().where(
-                    (Meeting.user_id == user_id) & (Meeting.status.in_(['requested', 'active']))
+                    (Meeting.user_id == user_id)
+                    & (Meeting.status.in_(["requested", "active"]))
                 )
             )
-            count = result.scalar_one() if hasattr(result, 'scalar_one') else result.scalar() or 0
-            logger.info(f"[Seat Count] User {user_id}: active/requested meetings (excluding 'stopping') = {count}")
+            count = (
+                result.scalar_one()
+                if hasattr(result, "scalar_one")
+                else result.scalar() or 0
+            )
+            logger.info(
+                f"[Seat Count] User {user_id}: active/requested meetings (excluding 'stopping') = {count}"
+            )
             return int(count)
     except Exception as e:
         logger.warning(f"[Seat Count] Fallback due to DB error for user {user_id}: {e}")
         # Fallback conservatively to 0 so we don't block users due to a read error
         return 0
-
-

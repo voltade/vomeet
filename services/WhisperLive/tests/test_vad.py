@@ -18,7 +18,9 @@ class TestVoiceActivityDetection(unittest.TestCase):
     def test_vad_silence_detection(self):
         silence = self.generate_silence(3)
         is_speech_present = self.vad(silence.copy())
-        self.assertFalse(is_speech_present, "VAD incorrectly identified silence as speech.")
+        self.assertFalse(
+            is_speech_present, "VAD incorrectly identified silence as speech."
+        )
 
     def test_vad_speech_detection(self):
         audio_tensor = load_audio("assets/jfk.flac")

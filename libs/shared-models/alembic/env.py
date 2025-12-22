@@ -18,7 +18,9 @@ if config.config_file_name is not None:
 
 # Add the project's root directory to the Python path.
 # This ensures that alembic can find your models.
-sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+sys.path.insert(
+    0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+)
 
 # Now we can import our models
 from shared_models.models import Base
@@ -33,10 +35,12 @@ DB_NAME = os.environ.get("DB_NAME", "vomeet")
 DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
 
-DATABASE_URL_SYNC = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL_SYNC = (
+    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
 
 # Set the database URL
-config.set_main_option('sqlalchemy.url', DATABASE_URL_SYNC)
+config.set_main_option("sqlalchemy.url", DATABASE_URL_SYNC)
 
 
 def run_migrations_offline() -> None:
@@ -77,9 +81,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
@@ -88,4 +90,4 @@ def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online() 
+    run_migrations_online()

@@ -9,7 +9,7 @@ BOT_IMAGE_NAME = os.environ.get("BOT_IMAGE_NAME", "vomeet-bot:latest")
 DOCKER_NETWORK = os.environ.get("DOCKER_NETWORK", "vomeet_default")
 
 # Lock settings
-LOCK_TIMEOUT_SECONDS = 300 # 5 minutes
+LOCK_TIMEOUT_SECONDS = 300  # 5 minutes
 LOCK_PREFIX = "bot_lock:"
 MAP_PREFIX = "bot_map:"
-STATUS_PREFIX = "bot_status:" 
+STATUS_PREFIX = "bot_status:"

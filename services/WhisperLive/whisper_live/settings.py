@@ -96,4 +96,4 @@ ADD_PAUSE_THRESH_S = 3
 # processing, while larger values (5) use beam search for potentially better
 # quality but slower processing. For real-time applications, beam_size=1 is
 # recommended for optimal performance.
-BEAM_SIZE = 1 # default 5
+BEAM_SIZE = 1  # default 5

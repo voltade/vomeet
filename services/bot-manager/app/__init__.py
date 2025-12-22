@@ -1,1 +1,1 @@
-# Bot Manager app package 
+# Bot Manager app package
