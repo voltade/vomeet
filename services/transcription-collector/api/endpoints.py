@@ -583,7 +583,6 @@ class CFProxyTranscriptionRequest(BaseModel):
 )
 async def ingest_cf_proxy_transcription(
     request: CFProxyTranscriptionRequest,
-    raw_request: Request,
     db: AsyncSession = Depends(get_db),
     authorization: Optional[str] = Header(None)
 ):
@@ -592,11 +591,6 @@ async def ingest_cf_proxy_transcription(
     This processes batch transcription results and stores them.
     Requires a valid MeetingToken in the Authorization header.
     """
-    # Debug logging
-    logger.info(f"[CF-Proxy] === DEBUG AUTH START ===")
-    logger.info(f"[CF-Proxy] ALL HEADERS: {dict(raw_request.headers)}")
-    logger.info(f"[CF-Proxy] authorization param: {authorization is not None}")
-    
     # Extract token from Bearer format
     token = None
     if authorization:
@@ -604,7 +598,6 @@ async def ingest_cf_proxy_transcription(
             token = authorization[7:]  # Remove 'Bearer ' prefix
         else:
             token = authorization
-        logger.info(f"[CF-Proxy] Token extracted, length: {len(token)}")
     
     # Verify MeetingToken from Authorization header
     if not token:

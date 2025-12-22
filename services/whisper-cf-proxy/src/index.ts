@@ -265,16 +265,6 @@ async function processTranscriptionJob(env: Env, job: TranscriptionJob): Promise
 async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
   const webhookUrl = env.VOMEET_WEBHOOK_URL!;
   
-  console.log(`[Webhook] === DEBUG START ===`);
-  console.log(`[Webhook] URL: ${webhookUrl}`);
-  console.log(`[Webhook] Session ID: ${job.sessionId}`);
-  console.log(`[Webhook] Meeting ID: ${job.meetingId}`);
-  console.log(`[Webhook] Chunk Index: ${job.chunkIndex}`);
-  console.log(`[Webhook] Token present: ${!!job.token}`);
-  console.log(`[Webhook] Token length: ${job.token?.length || 0}`);
-  console.log(`[Webhook] Token first 50 chars: ${job.token?.substring(0, 50) || 'none'}`);
-  console.log(`[Webhook] Token last 20 chars: ${job.token?.slice(-20) || 'none'}`);
-  
   const payload = {
     session_id: job.sessionId,
     meeting_id: job.meetingId,
@@ -287,8 +277,6 @@ async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
     duration: job.duration,
   };
 
-  console.log(`[Webhook] Payload: ${JSON.stringify(payload).substring(0, 500)}`);
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -296,9 +284,6 @@ async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
   if (job.token) {
     headers["Authorization"] = `Bearer ${job.token}`;
   }
-  
-  console.log(`[Webhook] Headers: ${JSON.stringify(headers)}`);
-  console.log(`[Webhook] Authorization header: ${headers["Authorization"]?.substring(0, 77) || 'none'}...`);
 
   const response = await fetch(webhookUrl, {
     method: "POST",
@@ -306,15 +291,8 @@ async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
     body: JSON.stringify(payload),
   });
 
-  console.log(`[Webhook] Response status: ${response.status}`);
-  console.log(`[Webhook] Response statusText: ${response.statusText}`);
-  console.log(`[Webhook] Response headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
-
-  const body = await response.text();
-  console.log(`[Webhook] Response body: ${body.substring(0, 500)}`);
-  console.log(`[Webhook] === DEBUG END ===`);
-
   if (!response.ok) {
+    const body = await response.text();
     throw new Error(`Collector responded with ${response.status}: ${body.substring(0, 200)}`);
   }
   
