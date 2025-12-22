@@ -565,12 +565,17 @@ async def transcription_webhook(request: Request):
     """
     body = await request.body()
     
+    # Forward the Authorization header from the original request
+    forward_headers = {"Content-Type": "application/json"}
+    if "authorization" in request.headers:
+        forward_headers["Authorization"] = request.headers["authorization"]
+    
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
                 f"{TRANSCRIPTION_COLLECTOR_URL}/transcripts/webhook",
                 content=body,
-                headers={"Content-Type": "application/json"},
+                headers=forward_headers,
                 timeout=30.0
             )
             return Response(

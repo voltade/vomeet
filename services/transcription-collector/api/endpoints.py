@@ -585,39 +585,32 @@ async def ingest_cf_proxy_transcription(
     request: CFProxyTranscriptionRequest,
     raw_request: Request,
     db: AsyncSession = Depends(get_db),
-    x_meeting_token: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None)
 ):
     """
     Endpoint for Cloudflare Whisper Proxy to submit transcriptions.
     This processes batch transcription results and stores them.
     Requires a valid MeetingToken in the Authorization header.
     """
-    # Debug logging - log ALL headers to see what's coming through
+    # Debug logging
     logger.info(f"[CF-Proxy] === DEBUG AUTH START ===")
     logger.info(f"[CF-Proxy] ALL HEADERS: {dict(raw_request.headers)}")
-    logger.info(f"[CF-Proxy] x_meeting_token param: {x_meeting_token is not None}")
+    logger.info(f"[CF-Proxy] authorization param: {authorization is not None}")
     
-    # Try to get the header directly from request as well
-    direct_header = raw_request.headers.get("x-meeting-token")
-    logger.info(f"[CF-Proxy] direct x-meeting-token header: {direct_header is not None}")
+    # Extract token from Bearer format
+    token = None
+    if authorization:
+        if authorization.startswith("Bearer "):
+            token = authorization[7:]  # Remove 'Bearer ' prefix
+        else:
+            token = authorization
+        logger.info(f"[CF-Proxy] Token extracted, length: {len(token)}")
     
-    # Use direct header if param didn't work
-    if not x_meeting_token and direct_header:
-        x_meeting_token = direct_header
-        logger.info(f"[CF-Proxy] Using direct header instead of param")
+    # Verify MeetingToken from Authorization header
+    if not token:
+        logger.warning(f"[CF-Proxy] Missing Authorization header for session {request.session_id}")
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
     
-    logger.info(f"[CF-Proxy] x-meeting-token header present: {x_meeting_token is not None}")
-    logger.info(f"[CF-Proxy] x-meeting-token header length: {len(x_meeting_token) if x_meeting_token else 0}")
-    if x_meeting_token:
-        logger.info(f"[CF-Proxy] x-meeting-token first 80 chars: {x_meeting_token[:80]}")
-        logger.info(f"[CF-Proxy] x-meeting-token last 30 chars: {x_meeting_token[-30:]}")
-    
-    # Verify MeetingToken from x-meeting-token header
-    if not x_meeting_token:
-        logger.warning(f"[CF-Proxy] Missing x-meeting-token header for session {request.session_id}")
-        raise HTTPException(status_code=401, detail="Missing x-meeting-token header")
-    
-    token = x_meeting_token
     claims = verify_meeting_token(token)
     if not claims:
         logger.warning(f"[CF-Proxy] Invalid MeetingToken for session {request.session_id}")
