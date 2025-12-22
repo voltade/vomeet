@@ -233,6 +233,7 @@ async def _get_full_transcript_segments(
                     speaker=None,
                     absolute_start_time=absolute_start_time,
                     absolute_end_time=absolute_end_time,
+                    created_at=chunk.created_at,
                 )
 
                 # Use unique key to avoid duplicates with same start time from different chunks
@@ -252,6 +253,7 @@ async def _get_full_transcript_segments(
                 speaker=None,
                 absolute_start_time=absolute_start_time,
                 absolute_end_time=absolute_end_time,
+                created_at=chunk.created_at,
             )
 
             key = f"chunk_{chunk.id}_full"
