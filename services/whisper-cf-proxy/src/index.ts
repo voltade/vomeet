@@ -393,7 +393,7 @@ async function transcribeAudio(env: Env, audioKey: string): Promise<Ai_Cf_Openai
   const result = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
     audio: base64Audio,
     task: "transcribe",
-    language: metadata.language || undefined,
+    language: metadata.language || "en",  // Default to English if not specified
     vad_filter: true,
   });
 
