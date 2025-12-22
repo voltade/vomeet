@@ -184,3 +184,23 @@ class GoogleIntegration(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User")
+
+
+class Webhook(Base):
+    """
+    Stores webhook configurations for users to receive event notifications.
+    Supports multiple webhooks per user with event filtering.
+    """
+
+    __tablename__ = "webhooks"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    url = Column(Text, nullable=False)  # Webhook endpoint URL
+    secret = Column(String(64), nullable=True)  # HMAC secret for signature verification
+    events = Column(JSONB, nullable=False, default=lambda: ["*"])  # List of events to subscribe to, or ["*"] for all
+    enabled = Column(sqlalchemy.Boolean, nullable=False, default=True)
+    description = Column(String(255), nullable=True)  # Optional description
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User")

@@ -971,3 +971,124 @@ class CalendarAutoJoinRequest(BaseModel):
 
 
 # --- END Google Calendar Integration Schemas ---
+
+
+# --- Webhook Schemas ---
+
+
+class WebhookEventType(str, Enum):
+    """Supported webhook event types"""
+    
+    # Bot lifecycle events
+    BOT_REQUESTED = "bot.requested"
+    BOT_JOINING = "bot.joining"
+    BOT_AWAITING_ADMISSION = "bot.awaiting_admission"
+    BOT_ACTIVE = "bot.active"
+    BOT_STOPPING = "bot.stopping"
+    BOT_ENDED = "bot.ended"
+    BOT_FAILED = "bot.failed"
+    
+    # Meeting events
+    MEETING_STATUS_CHANGE = "meeting.status_change"
+    
+    # Transcript events
+    TRANSCRIPT_READY = "transcript.ready"
+    TRANSCRIPT_SEGMENT = "transcript.segment"
+    
+    # Wildcard for all events
+    ALL = "*"
+
+
+class WebhookCreate(BaseModel):
+    """Request to create a new webhook"""
+    
+    url: str = Field(..., description="Webhook endpoint URL (must be HTTPS in production)")
+    events: List[str] = Field(
+        default=["*"],
+        description="List of event types to subscribe to. Use '*' for all events."
+    )
+    description: Optional[str] = Field(None, max_length=255, description="Optional description for the webhook")
+    
+    @validator("url")
+    def validate_url(cls, v):
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+    
+    @validator("events")
+    def validate_events(cls, v):
+        valid_events = {e.value for e in WebhookEventType}
+        for event in v:
+            if event not in valid_events:
+                raise ValueError(f"Invalid event type '{event}'. Valid types: {sorted(valid_events)}")
+        return v
+
+
+class WebhookUpdate(BaseModel):
+    """Request to update a webhook"""
+    
+    url: Optional[str] = Field(None, description="New webhook URL")
+    events: Optional[List[str]] = Field(None, description="New list of event types")
+    enabled: Optional[bool] = Field(None, description="Enable or disable the webhook")
+    description: Optional[str] = Field(None, max_length=255, description="New description")
+    
+    @validator("url")
+    def validate_url(cls, v):
+        if v is not None and not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+    
+    @validator("events")
+    def validate_events(cls, v):
+        if v is not None:
+            valid_events = {e.value for e in WebhookEventType}
+            for event in v:
+                if event not in valid_events:
+                    raise ValueError(f"Invalid event type '{event}'. Valid types: {sorted(valid_events)}")
+        return v
+
+
+class WebhookResponse(BaseModel):
+    """Response containing webhook configuration"""
+    
+    id: int
+    user_id: int
+    url: str
+    events: List[str]
+    enabled: bool
+    description: Optional[str]
+    secret: Optional[str] = Field(None, description="Webhook secret (only shown on creation)")
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class WebhookListResponse(BaseModel):
+    """Response containing list of webhooks"""
+    
+    webhooks: List[WebhookResponse]
+
+
+class WebhookTestResponse(BaseModel):
+    """Response from testing a webhook"""
+    
+    success: bool
+    status_code: Optional[int] = None
+    response_time_ms: Optional[float] = None
+    error: Optional[str] = None
+
+
+class WebhookDelivery(BaseModel):
+    """Webhook delivery payload sent to user's endpoint"""
+    
+    event: str = Field(..., description="Event type that triggered the webhook")
+    timestamp: datetime = Field(..., description="When the event occurred")
+    data: Dict[str, Any] = Field(..., description="Event-specific data")
+    
+    # Meeting data (included for most events)
+    meeting: Optional[Dict[str, Any]] = Field(None, description="Meeting details if applicable")
+
+
+# --- END Webhook Schemas ---
