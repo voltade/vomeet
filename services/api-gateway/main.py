@@ -739,14 +739,10 @@ import time
 async def get_user_from_api_key(api_key: str) -> Optional[User]:
     """Get user from API key."""
     async with async_session_local() as db:
-        result = await db.execute(
-            select(APIToken).where(APIToken.token == api_key)
-        )
+        result = await db.execute(select(APIToken).where(APIToken.token == api_key))
         token = result.scalar_one_or_none()
         if token:
-            result = await db.execute(
-                select(User).where(User.id == token.user_id)
-            )
+            result = await db.execute(select(User).where(User.id == token.user_id))
             return result.scalar_one_or_none()
     return None
 
@@ -764,32 +760,32 @@ async def list_webhooks(request: Request):
     api_key = request.headers.get("x-api-key")
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    
+
     user = await get_user_from_api_key(api_key)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    
+
     async with async_session_local() as db:
-        result = await db.execute(
-            select(Webhook).where(Webhook.user_id == user.id)
-        )
+        result = await db.execute(select(Webhook).where(Webhook.user_id == user.id))
         webhooks = result.scalars().all()
-        
+
         # Don't expose secrets in list
         webhook_responses = []
         for w in webhooks:
-            webhook_responses.append(WebhookResponse(
-                id=w.id,
-                user_id=w.user_id,
-                url=w.url,
-                events=w.events or ["*"],
-                enabled=w.enabled,
-                description=w.description,
-                secret=None,  # Never expose secret in list
-                created_at=w.created_at,
-                updated_at=w.updated_at,
-            ))
-        
+            webhook_responses.append(
+                WebhookResponse(
+                    id=w.id,
+                    user_id=w.user_id,
+                    url=w.url,
+                    events=w.events or ["*"],
+                    enabled=w.enabled,
+                    description=w.description,
+                    secret=None,  # Never expose secret in list
+                    created_at=w.created_at,
+                    updated_at=w.updated_at,
+                )
+            )
+
         return WebhookListResponse(webhooks=webhook_responses)
 
 
@@ -807,14 +803,14 @@ async def create_webhook(webhook_data: WebhookCreate, request: Request):
     api_key = request.headers.get("x-api-key")
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    
+
     user = await get_user_from_api_key(api_key)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    
+
     # Generate a secure secret
     webhook_secret = secrets.token_hex(32)
-    
+
     async with async_session_local() as db:
         webhook = Webhook(
             user_id=user.id,
@@ -827,7 +823,7 @@ async def create_webhook(webhook_data: WebhookCreate, request: Request):
         db.add(webhook)
         await db.commit()
         await db.refresh(webhook)
-        
+
         # Return with secret (only time it's shown)
         return WebhookResponse(
             id=webhook.id,
@@ -855,20 +851,18 @@ async def get_webhook(webhook_id: int, request: Request):
     api_key = request.headers.get("x-api-key")
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    
+
     user = await get_user_from_api_key(api_key)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    
+
     async with async_session_local() as db:
-        result = await db.execute(
-            select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id)
-        )
+        result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id))
         webhook = result.scalar_one_or_none()
-        
+
         if not webhook:
             raise HTTPException(status_code=404, detail="Webhook not found")
-        
+
         return WebhookResponse(
             id=webhook.id,
             user_id=webhook.user_id,
@@ -895,20 +889,18 @@ async def update_webhook(webhook_id: int, webhook_data: WebhookUpdate, request: 
     api_key = request.headers.get("x-api-key")
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    
+
     user = await get_user_from_api_key(api_key)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    
+
     async with async_session_local() as db:
-        result = await db.execute(
-            select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id)
-        )
+        result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id))
         webhook = result.scalar_one_or_none()
-        
+
         if not webhook:
             raise HTTPException(status_code=404, detail="Webhook not found")
-        
+
         # Update fields if provided
         if webhook_data.url is not None:
             webhook.url = webhook_data.url
@@ -918,10 +910,10 @@ async def update_webhook(webhook_id: int, webhook_data: WebhookUpdate, request: 
             webhook.enabled = webhook_data.enabled
         if webhook_data.description is not None:
             webhook.description = webhook_data.description
-        
+
         await db.commit()
         await db.refresh(webhook)
-        
+
         return WebhookResponse(
             id=webhook.id,
             user_id=webhook.user_id,
@@ -948,23 +940,21 @@ async def delete_webhook(webhook_id: int, request: Request):
     api_key = request.headers.get("x-api-key")
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    
+
     user = await get_user_from_api_key(api_key)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    
+
     async with async_session_local() as db:
-        result = await db.execute(
-            select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id)
-        )
+        result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id))
         webhook = result.scalar_one_or_none()
-        
+
         if not webhook:
             raise HTTPException(status_code=404, detail="Webhook not found")
-        
+
         await db.delete(webhook)
         await db.commit()
-        
+
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -981,24 +971,22 @@ async def test_webhook(webhook_id: int, request: Request):
     api_key = request.headers.get("x-api-key")
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    
+
     user = await get_user_from_api_key(api_key)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    
+
     async with async_session_local() as db:
-        result = await db.execute(
-            select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id)
-        )
+        result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id))
         webhook = result.scalar_one_or_none()
-        
+
         if not webhook:
             raise HTTPException(status_code=404, detail="Webhook not found")
-        
+
         # Prepare test payload
         import hmac
         import hashlib
-        
+
         test_payload = {
             "event": "webhook.test",
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1008,24 +996,22 @@ async def test_webhook(webhook_id: int, request: Request):
             },
             "meeting": None,
         }
-        
+
         payload_json = json.dumps(test_payload, default=str)
-        
+
         headers = {
             "Content-Type": "application/json",
             "X-Vomeet-Event": "webhook.test",
             "X-Vomeet-Timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         # Add signature if secret exists
         if webhook.secret:
             signature = hmac.new(
-                webhook.secret.encode("utf-8"),
-                payload_json.encode("utf-8"),
-                hashlib.sha256
+                webhook.secret.encode("utf-8"), payload_json.encode("utf-8"), hashlib.sha256
             ).hexdigest()
             headers["X-Vomeet-Signature"] = f"sha256={signature}"
-        
+
         # Send test request
         start_time = time.time()
         try:
@@ -1037,7 +1023,7 @@ async def test_webhook(webhook_id: int, request: Request):
                     timeout=30.0,
                 )
                 response_time = (time.time() - start_time) * 1000
-                
+
                 return WebhookTestResponse(
                     success=200 <= response.status_code < 300,
                     status_code=response.status_code,
@@ -1066,27 +1052,25 @@ async def rotate_webhook_secret(webhook_id: int, request: Request):
     api_key = request.headers.get("x-api-key")
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    
+
     user = await get_user_from_api_key(api_key)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    
+
     async with async_session_local() as db:
-        result = await db.execute(
-            select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id)
-        )
+        result = await db.execute(select(Webhook).where(Webhook.id == webhook_id, Webhook.user_id == user.id))
         webhook = result.scalar_one_or_none()
-        
+
         if not webhook:
             raise HTTPException(status_code=404, detail="Webhook not found")
-        
+
         # Generate new secret
         new_secret = secrets.token_hex(32)
         webhook.secret = new_secret
-        
+
         await db.commit()
         await db.refresh(webhook)
-        
+
         # Return with new secret
         return WebhookResponse(
             id=webhook.id,
