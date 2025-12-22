@@ -32,36 +32,55 @@ def _b64url_decode(data: str) -> bytes:
 def verify_meeting_token(token: str) -> Optional[dict]:
     try:
         if not token:
+            logger.warning("[MeetingToken] Token is empty/None")
             return None
         secret = os.environ.get("ADMIN_TOKEN") or os.environ.get("ADMIN_API_TOKEN")
         if not secret:
             logger.error("ADMIN_TOKEN not set; cannot verify MeetingToken")
             return None
+        logger.info(f"[MeetingToken] Token length: {len(token)}")
+        logger.info(f"[MeetingToken] Token first 50 chars: {token[:50]}")
+        logger.info(f"[MeetingToken] Secret length: {len(secret)}")
+        logger.info(f"[MeetingToken] Secret first 10 chars: {secret[:10]}...")
         parts = token.split('.')
         if len(parts) != 3:
+            logger.warning(f"[MeetingToken] Invalid token format: {len(parts)} parts instead of 3")
             return None
         header_b64, payload_b64, signature_b64 = parts
+        logger.info(f"[MeetingToken] Header b64: {header_b64}")
+        logger.info(f"[MeetingToken] Payload b64: {payload_b64[:50]}...")
         header_json = _b64url_decode(header_b64)
         payload_json = _b64url_decode(payload_b64)
         header = json.loads(header_json)
         payload = json.loads(payload_json)
+        logger.info(f"[MeetingToken] Header: {header}")
+        logger.info(f"[MeetingToken] Payload: {payload}")
         if header.get('alg') != 'HS256' or header.get('typ') != 'JWT':
+            logger.warning(f"[MeetingToken] Invalid header: alg={header.get('alg')}, typ={header.get('typ')}")
             return None
         signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
         expected_sig = hmac.new(secret.encode("utf-8"), signing_input, digestmod='sha256').digest()
         expected_b64 = _b64url_encode(expected_sig)
+        logger.info(f"[MeetingToken] Expected sig: {expected_b64}")
+        logger.info(f"[MeetingToken] Received sig: {signature_b64}")
         if not hmac.compare_digest(expected_b64, signature_b64):
+            logger.warning("[MeetingToken] Signature mismatch!")
             return None
         # Basic claims checks
         now = int(datetime.now(timezone.utc).timestamp())
         if 'exp' in payload and int(payload['exp']) < now:
+            logger.warning(f"[MeetingToken] Token expired: exp={payload['exp']}, now={now}")
             return None
         if payload.get('aud') != 'transcription-collector' or payload.get('iss') != 'bot-manager':
+            logger.warning(f"[MeetingToken] Invalid aud/iss: aud={payload.get('aud')}, iss={payload.get('iss')}")
             return None
         if payload.get('scope') != 'transcribe:write':
+            logger.warning(f"[MeetingToken] Invalid scope: {payload.get('scope')}")
             return None
         if 'meeting_id' not in payload:
+            logger.warning("[MeetingToken] Missing meeting_id in payload")
             return None
+        logger.info("[MeetingToken] Token verification SUCCESS")
         return payload
     except Exception as e:
         logger.warning(f"MeetingToken verification failed: {e}")

@@ -591,6 +591,15 @@ async def ingest_cf_proxy_transcription(
     This processes batch transcription results and stores them.
     Requires a valid MeetingToken in the Authorization header.
     """
+    # Debug logging
+    logger.info(f"[CF-Proxy] === DEBUG AUTH START ===")
+    logger.info(f"[CF-Proxy] Authorization header present: {authorization is not None}")
+    logger.info(f"[CF-Proxy] Authorization header length: {len(authorization) if authorization else 0}")
+    logger.info(f"[CF-Proxy] Authorization starts with Bearer: {authorization.startswith('Bearer ') if authorization else False}")
+    if authorization:
+        logger.info(f"[CF-Proxy] Authorization first 80 chars: {authorization[:80]}")
+        logger.info(f"[CF-Proxy] Authorization last 30 chars: {authorization[-30:]}")
+    
     # Verify MeetingToken from Authorization header
     if not authorization or not authorization.startswith("Bearer "):
         logger.warning(f"[CF-Proxy] Missing or invalid Authorization header for session {request.session_id}")
