@@ -396,7 +396,8 @@ class UserResponse(UserBase):
     )
 
     class Config:
-        orm_mode = True
+        orm_mode = True  # Pydantic v1
+        from_attributes = True  # Pydantic v2
 
 
 class TokenBase(BaseModel):
@@ -413,7 +414,8 @@ class TokenResponse(TokenBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        orm_mode = True  # Pydantic v1
+        from_attributes = True  # Pydantic v2
 
 
 class UserDetailResponse(UserResponse):
@@ -631,7 +633,8 @@ class MeetingResponse(
         return v
 
     class Config:
-        orm_mode = True
+        orm_mode = True  # Pydantic v1
+        from_attributes = True  # Pydantic v2
         use_enum_values = True  # Serialize Platform enum to its string value
 
 
@@ -726,7 +729,8 @@ class TranscriptionSegment(BaseModel):
         return v
 
     class Config:
-        orm_mode = True
+        orm_mode = True  # Pydantic v1
+        from_attributes = True  # Pydantic v2
         allow_population_by_field_name = True  # Allow using both alias and field name
 
 
@@ -774,7 +778,8 @@ class TranscriptionResponse(
     )
 
     class Config:
-        orm_mode = True  # Allows creation from ORM models (e.g., joined query result)
+        orm_mode = True  # Pydantic v1
+        from_attributes = True  # Pydantic v2
         use_enum_values = True
 
 
@@ -839,7 +844,8 @@ class UserTableResponse(BaseModel):
     # Excludes: data, api_tokens
 
     class Config:
-        orm_mode = True
+        orm_mode = True  # Pydantic v1
+        from_attributes = True  # Pydantic v2
 
 
 class MeetingTableResponse(BaseModel):
@@ -871,7 +877,8 @@ class MeetingTableResponse(BaseModel):
         return v
 
     class Config:
-        orm_mode = True
+        orm_mode = True  # Pydantic v1
+        from_attributes = True  # Pydantic v2
         use_enum_values = True
 
 
@@ -884,7 +891,8 @@ class MeetingSessionResponse(BaseModel):
     session_start_time: datetime
 
     class Config:
-        orm_mode = True
+        orm_mode = True  # Pydantic v1
+        from_attributes = True  # Pydantic v2
 
 
 class TranscriptionStats(BaseModel):
