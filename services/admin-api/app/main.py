@@ -177,7 +177,7 @@ async def set_user_webhook(
     await db.refresh(user)
     logger.info(f"Updated webhook URL for user {user.email}")
 
-    return UserResponse.from_orm(user)
+    return UserResponse.model_validate(user)
 
 
 # --- Admin Endpoints (Copied and adapted from bot-manager/admin.py) ---
@@ -208,7 +208,7 @@ async def create_user(
             f"Found existing user: {existing_user.email} (ID: {existing_user.id})"
         )
         response.status_code = status.HTTP_200_OK
-        return UserResponse.from_orm(existing_user)
+        return UserResponse.model_validate(existing_user)
 
     user_data = user_in.dict()
     db_user = User(
@@ -221,7 +221,7 @@ async def create_user(
     await db.commit()
     await db.refresh(db_user)
     logger.info(f"Admin created user: {db_user.email} (ID: {db_user.id})")
-    return UserResponse.from_orm(db_user)
+    return UserResponse.model_validate(db_user)
 
 
 @admin_router.get(
@@ -234,7 +234,7 @@ async def list_users(
 ):
     result = await db.execute(select(User).offset(skip).limit(limit))
     users = result.scalars().all()
-    return [UserResponse.from_orm(u) for u in users]
+    return [UserResponse.model_validate(u) for u in users]
 
 
 @admin_router.get(
@@ -368,7 +368,7 @@ async def update_user(
             f"Admin attempted update for user ID: {user_id}, but no changes detected."
         )
 
-    return UserResponse.from_orm(db_user)
+    return UserResponse.model_validate(db_user)
 
 
 @admin_router.post(
@@ -392,7 +392,7 @@ async def create_token_for_user(user_id: int, db: AsyncSession = Depends(get_db)
     await db.refresh(db_token)
     logger.info(f"Admin created token for user {user_id} ({user.email})")
     # Use TokenResponse for consistency with schema definition (datetime object)
-    return TokenResponse.from_orm(db_token)
+    return TokenResponse.model_validate(db_token)
 
 
 @admin_router.delete(
@@ -447,7 +447,7 @@ async def list_meetings_with_users(
 
     # Now, construct the response using Pydantic models
     response_items = [
-        MeetingUserStat(**meeting.__dict__, user=UserResponse.from_orm(meeting.user))
+        MeetingUserStat(**meeting.__dict__, user=UserResponse.model_validate(meeting.user))
         for meeting in meetings
         if meeting.user
     ]
@@ -470,7 +470,7 @@ async def get_users_table(
     """
     result = await db.execute(select(User).offset(skip).limit(limit))
     users = result.scalars().all()
-    return [UserTableResponse.from_orm(u) for u in users]
+    return [UserTableResponse.model_validate(u) for u in users]
 
 
 @admin_router.get(
@@ -487,7 +487,7 @@ async def get_meetings_table(
     """
     result = await db.execute(select(Meeting).offset(skip).limit(limit))
     meetings = result.scalars().all()
-    return [MeetingTableResponse.from_orm(m) for m in meetings]
+    return [MeetingTableResponse.model_validate(m) for m in meetings]
 
 
 @admin_router.get(
@@ -560,8 +560,8 @@ async def get_meeting_telematics(
         )
 
     return MeetingTelematicsResponse(
-        meeting=MeetingResponse.from_orm(meeting),
-        sessions=[MeetingSessionResponse.from_orm(s) for s in sessions],
+        meeting=MeetingResponse.model_validate(meeting),
+        sessions=[MeetingSessionResponse.model_validate(s) for s in sessions],
         transcription_stats=transcription_stats,
         performance_metrics=performance_metrics,
     )
@@ -686,10 +686,10 @@ async def get_user_details(
     )
 
     return UserAnalyticsResponse(
-        user=UserDetailResponse.from_orm(user),
+        user=UserDetailResponse.model_validate(user),
         meeting_stats=meeting_stats,
         usage_patterns=usage_patterns,
-        api_tokens=[TokenResponse.from_orm(t) for t in user.api_tokens]
+        api_tokens=[TokenResponse.model_validate(t) for t in user.api_tokens]
         if include_tokens
         else None,
     )

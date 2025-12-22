@@ -384,7 +384,6 @@ class UserResponse(UserBase):
     max_concurrent_bots: int = Field(..., description="Maximum number of concurrent bots allowed for the user")
 
     class Config:
-        orm_mode = True  # Pydantic v1
         from_attributes = True  # Pydantic v2
 
 
@@ -402,7 +401,6 @@ class TokenResponse(TokenBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True  # Pydantic v1
         from_attributes = True  # Pydantic v2
 
 
@@ -597,7 +595,6 @@ class MeetingResponse(
         return v
 
     class Config:
-        orm_mode = True  # Pydantic v1
         from_attributes = True  # Pydantic v2
         use_enum_values = True  # Serialize Platform enum to its string value
 
@@ -673,9 +670,8 @@ class TranscriptionSegment(BaseModel):
         return v
 
     class Config:
-        orm_mode = True  # Pydantic v1
         from_attributes = True  # Pydantic v2
-        allow_population_by_field_name = True  # Allow using both alias and field name
+        populate_by_name = True  # Allow using both alias and field name (Pydantic v2)
 
 
 # --- WebSocket Schema (NEW - Represents data from WhisperLive) ---
@@ -718,7 +714,6 @@ class TranscriptionResponse(BaseModel):  # Doesn't inherit MeetingResponse to av
     segments: List[TranscriptionSegment] = Field(..., description="List of transcript segments")
 
     class Config:
-        orm_mode = True  # Pydantic v1
         from_attributes = True  # Pydantic v2
         use_enum_values = True
 
@@ -784,7 +779,6 @@ class UserTableResponse(BaseModel):
     # Excludes: data, api_tokens
 
     class Config:
-        orm_mode = True  # Pydantic v1
         from_attributes = True  # Pydantic v2
 
 
@@ -817,7 +811,6 @@ class MeetingTableResponse(BaseModel):
         return v
 
     class Config:
-        orm_mode = True  # Pydantic v1
         from_attributes = True  # Pydantic v2
         use_enum_values = True
 
@@ -831,7 +824,6 @@ class MeetingSessionResponse(BaseModel):
     session_start_time: datetime
 
     class Config:
-        orm_mode = True  # Pydantic v1
         from_attributes = True  # Pydantic v2
 
 

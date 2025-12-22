@@ -828,7 +828,7 @@ async def request_bot(
         logger.info(
             f"Successfully started bot container {container_id} for meeting {meeting_id}"
         )
-        return MeetingResponse.from_orm(current_meeting_for_bot_launch)
+        return MeetingResponse.model_validate(current_meeting_for_bot_launch)
 
     except HTTPException as http_exc:
         logger.warning(

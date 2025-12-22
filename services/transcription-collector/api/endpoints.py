@@ -330,7 +330,7 @@ async def get_meetings(current_user: User = Depends(get_current_user), db: Async
     stmt = select(Meeting).where(Meeting.user_id == current_user.id).order_by(Meeting.created_at.desc())
     result = await db.execute(stmt)
     meetings = result.scalars().all()
-    return MeetingListResponse(meetings=[MeetingResponse.from_orm(m) for m in meetings])
+    return MeetingListResponse(meetings=[MeetingResponse.model_validate(m) for m in meetings])
 
 
 @router.get(
@@ -414,7 +414,7 @@ async def get_transcript_by_native_id(
 
     logger.info(f"[API Meet {internal_meeting_id}] Merged and sorted into {len(sorted_segments)} total segments.")
 
-    meeting_details = MeetingResponse.from_orm(meeting)
+    meeting_details = MeetingResponse.model_validate(meeting)
     response_data = meeting_details.dict()
     response_data["segments"] = sorted_segments
     return TranscriptionResponse(**response_data)
@@ -609,7 +609,7 @@ async def update_meeting_data(
 
     logger.debug(f"[API] Meeting.data after commit and refresh: {meeting.data}")
 
-    return MeetingResponse.from_orm(meeting)
+    return MeetingResponse.model_validate(meeting)
 
 
 @router.delete(
