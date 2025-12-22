@@ -584,7 +584,7 @@ class CFProxyTranscriptionRequest(BaseModel):
 async def ingest_cf_proxy_transcription(
     request: CFProxyTranscriptionRequest,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None)
+    x_meeting_token: Optional[str] = Header(None)
 ):
     """
     Endpoint for Cloudflare Whisper Proxy to submit transcriptions.
@@ -593,18 +593,18 @@ async def ingest_cf_proxy_transcription(
     """
     # Debug logging
     logger.info(f"[CF-Proxy] === DEBUG AUTH START ===")
-    logger.info(f"[CF-Proxy] Authorization header present: {authorization is not None}")
-    logger.info(f"[CF-Proxy] Authorization header length: {len(authorization) if authorization else 0}")
-    if authorization:
-        logger.info(f"[CF-Proxy] Authorization first 80 chars: {authorization[:80]}")
-        logger.info(f"[CF-Proxy] Authorization last 30 chars: {authorization[-30:]}")
+    logger.info(f"[CF-Proxy] x-meeting-token header present: {x_meeting_token is not None}")
+    logger.info(f"[CF-Proxy] x-meeting-token header length: {len(x_meeting_token) if x_meeting_token else 0}")
+    if x_meeting_token:
+        logger.info(f"[CF-Proxy] x-meeting-token first 80 chars: {x_meeting_token[:80]}")
+        logger.info(f"[CF-Proxy] x-meeting-token last 30 chars: {x_meeting_token[-30:]}")
     
-    # Verify MeetingToken from Authorization header
-    if not authorization or not authorization.startswith("Bearer "):
-        logger.warning(f"[CF-Proxy] Missing or invalid Authorization header for session {request.session_id}")
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    # Verify MeetingToken from x-meeting-token header
+    if not x_meeting_token:
+        logger.warning(f"[CF-Proxy] Missing x-meeting-token header for session {request.session_id}")
+        raise HTTPException(status_code=401, detail="Missing x-meeting-token header")
     
-    token = authorization[7:]  # Remove "Bearer " prefix
+    token = x_meeting_token
     claims = verify_meeting_token(token)
     if not claims:
         logger.warning(f"[CF-Proxy] Invalid MeetingToken for session {request.session_id}")

@@ -294,11 +294,11 @@ async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
   };
   
   if (job.token) {
-    headers["Authorization"] = `Bearer ${job.token}`;
+    headers["x-meeting-token"] = job.token;
   }
   
   console.log(`[Webhook] Headers: ${JSON.stringify(headers)}`);
-  console.log(`[Webhook] Authorization header: ${headers["Authorization"]?.substring(0, 70) || 'none'}...`);
+  console.log(`[Webhook] x-meeting-token header: ${headers["x-meeting-token"]?.substring(0, 70) || 'none'}...`);
 
   const response = await fetch(webhookUrl, {
     method: "POST",
