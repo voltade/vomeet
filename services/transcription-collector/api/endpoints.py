@@ -583,6 +583,7 @@ class CFProxyTranscriptionRequest(BaseModel):
 )
 async def ingest_cf_proxy_transcription(
     request: CFProxyTranscriptionRequest,
+    raw_request: Request,
     db: AsyncSession = Depends(get_db),
     x_meeting_token: Optional[str] = Header(None)
 ):
@@ -591,8 +592,20 @@ async def ingest_cf_proxy_transcription(
     This processes batch transcription results and stores them.
     Requires a valid MeetingToken in the Authorization header.
     """
-    # Debug logging
+    # Debug logging - log ALL headers to see what's coming through
     logger.info(f"[CF-Proxy] === DEBUG AUTH START ===")
+    logger.info(f"[CF-Proxy] ALL HEADERS: {dict(raw_request.headers)}")
+    logger.info(f"[CF-Proxy] x_meeting_token param: {x_meeting_token is not None}")
+    
+    # Try to get the header directly from request as well
+    direct_header = raw_request.headers.get("x-meeting-token")
+    logger.info(f"[CF-Proxy] direct x-meeting-token header: {direct_header is not None}")
+    
+    # Use direct header if param didn't work
+    if not x_meeting_token and direct_header:
+        x_meeting_token = direct_header
+        logger.info(f"[CF-Proxy] Using direct header instead of param")
+    
     logger.info(f"[CF-Proxy] x-meeting-token header present: {x_meeting_token is not None}")
     logger.info(f"[CF-Proxy] x-meeting-token header length: {len(x_meeting_token) if x_meeting_token else 0}")
     if x_meeting_token:
