@@ -27,15 +27,11 @@ logger = logging.getLogger("bot_manager.k8s_utils")
 # Kubernetes configuration
 KUBECONFIG_PATH = os.getenv("KUBECONFIG")
 K8S_NAMESPACE = os.getenv("K8S_NAMESPACE", "default")
-K8S_IMAGE_REPOSITORY = os.getenv(
-    "K8S_BOT_IMAGE_REPOSITORY", "ghcr.io/voltade/vomeet-bot"
-)
+K8S_IMAGE_REPOSITORY = os.getenv("K8S_BOT_IMAGE_REPOSITORY", "ghcr.io/voltade/vomeet-bot")
 K8S_IMAGE_TAG = os.getenv("K8S_BOT_IMAGE_TAG", "latest")
 K8S_SERVICE_ACCOUNT = os.getenv("K8S_SERVICE_ACCOUNT", "vomeet-bot")
 K8S_REDIS_URL = os.getenv("REDIS_URL")  # Required for bot config
-K8S_WHISPER_LIVE_URL = os.getenv(
-    "WHISPER_LIVE_URL", "wss://vomeet-whisper-proxy.voltade.workers.dev/ws"
-)
+K8S_WHISPER_LIVE_URL = os.getenv("WHISPER_LIVE_URL", "wss://vomeet-whisper-proxy.voltade.workers.dev/ws")
 K8S_BOT_MANAGER_CALLBACK_URL = os.getenv(
     "K8S_BOT_MANAGER_CALLBACK_URL",
     "http://vomeet-bot-manager:8080/bots/internal/callback/exited",
@@ -46,12 +42,8 @@ K8S_BOT_CPU_REQUEST = os.getenv("K8S_BOT_CPU_REQUEST", "1000m")
 K8S_BOT_CPU_LIMIT = os.getenv("K8S_BOT_CPU_LIMIT", "4000m")
 K8S_BOT_MEMORY_REQUEST = os.getenv("K8S_BOT_MEMORY_REQUEST", "2Gi")
 K8S_BOT_MEMORY_LIMIT = os.getenv("K8S_BOT_MEMORY_LIMIT", "8Gi")
-K8S_BOT_ACTIVE_DEADLINE = int(
-    os.getenv("K8S_BOT_ACTIVE_DEADLINE_SECONDS", "7200")
-)  # 2 hours
-K8S_BOT_TTL_AFTER_FINISHED = int(
-    os.getenv("K8S_BOT_TTL_AFTER_FINISHED", "300")
-)  # 5 minutes
+K8S_BOT_ACTIVE_DEADLINE = int(os.getenv("K8S_BOT_ACTIVE_DEADLINE_SECONDS", "7200"))  # 2 hours
+K8S_BOT_TTL_AFTER_FINISHED = int(os.getenv("K8S_BOT_TTL_AFTER_FINISHED", "300"))  # 5 minutes
 
 # Initialize Kubernetes client
 try:
@@ -138,7 +130,7 @@ async def start_bot_container(
         "meeting_id": meeting_id,
         "platform": platform,
         "meetingUrl": meeting_url,
-        "botName": bot_name or "Vomeet Bot",
+        "botName": bot_name or "Voltade Meeting Assistant",
         "token": meeting_token,
         "nativeMeetingId": native_meeting_id,
         "connectionId": connection_id,
@@ -244,15 +236,11 @@ async def start_bot_container(
         },
     }
 
-    logger.info(
-        f"Creating Kubernetes Job '{job_name}' for meeting {meeting_id} in namespace {K8S_NAMESPACE}"
-    )
+    logger.info(f"Creating Kubernetes Job '{job_name}' for meeting {meeting_id} in namespace {K8S_NAMESPACE}")
 
     try:
         # Create the Job - pass manifest dict directly (not V1Job object)
-        job = batch_api.create_namespaced_job(
-            namespace=K8S_NAMESPACE, body=job_manifest
-        )
+        job = batch_api.create_namespaced_job(namespace=K8S_NAMESPACE, body=job_manifest)
 
         logger.info(
             f"Successfully created Kubernetes Job '{job_name}' (UID: {job.metadata.uid}). "
@@ -263,8 +251,7 @@ async def start_bot_container(
 
     except ApiException as e:
         logger.error(
-            f"Kubernetes API error creating Job '{job_name}': HTTP {e.status}, "
-            f"Reason: {e.reason}, Body: {e.body}"
+            f"Kubernetes API error creating Job '{job_name}': HTTP {e.status}, Reason: {e.reason}, Body: {e.body}"
         )
         return None, None
     except Exception as e:
@@ -287,9 +274,7 @@ def stop_bot_container(container_id: str) -> bool:
     try:
         # Delete the job with propagation policy to also delete pods
         delete_options = client.V1DeleteOptions(propagation_policy="Background")
-        batch_api.delete_namespaced_job(
-            name=job_name, namespace=K8S_NAMESPACE, body=delete_options
-        )
+        batch_api.delete_namespaced_job(name=job_name, namespace=K8S_NAMESPACE, body=delete_options)
         logger.info(f"Successfully deleted Kubernetes Job '{job_name}'")
         return True
 
@@ -298,8 +283,7 @@ def stop_bot_container(container_id: str) -> bool:
             logger.warning(f"Job '{job_name}' not found (may already be deleted)")
             return True  # Consider it successful if already gone
         logger.error(
-            f"Kubernetes API error deleting Job '{job_name}': HTTP {e.status}, "
-            f"Reason: {e.reason}, Body: {e.body}"
+            f"Kubernetes API error deleting Job '{job_name}': HTTP {e.status}, Reason: {e.reason}, Body: {e.body}"
         )
         return False
     except Exception as e:
@@ -323,9 +307,7 @@ async def get_running_bots_status(user_id: int) -> List[Dict[str, Any]]:
         # List jobs with label selector
         label_selector = f"app.kubernetes.io/name=vomeet-bot,user-id={user_id}"
 
-        jobs = batch_api.list_namespaced_job(
-            namespace=K8S_NAMESPACE, label_selector=label_selector
-        )
+        jobs = batch_api.list_namespaced_job(namespace=K8S_NAMESPACE, label_selector=label_selector)
 
         running_bots = []
 
@@ -355,15 +337,12 @@ async def get_running_bots_status(user_id: int) -> List[Dict[str, Any]]:
                 "container_id": container_id,
                 "container_name": container_name,
                 "platform": labels.get("platform"),
-                "native_meeting_id": labels.get("native-meeting-id")
-                or labels.get("native_meeting_id"),
+                "native_meeting_id": labels.get("native-meeting-id") or labels.get("native_meeting_id"),
                 "status": normalized,
                 "normalized_status": normalized,
                 "created_at": annotations.get(
                     "bot-manager/created-at",
-                    job.metadata.creation_timestamp.isoformat()
-                    if job.metadata.creation_timestamp
-                    else None,
+                    job.metadata.creation_timestamp.isoformat() if job.metadata.creation_timestamp else None,
                 ),
                 "labels": labels,
                 "meeting_id_from_name": labels.get("meeting-id"),
@@ -376,10 +355,7 @@ async def get_running_bots_status(user_id: int) -> List[Dict[str, Any]]:
         return running_bots
 
     except ApiException as e:
-        logger.error(
-            f"Kubernetes API error querying Jobs: HTTP {e.status}, "
-            f"Reason: {e.reason}, Body: {e.body}"
-        )
+        logger.error(f"Kubernetes API error querying Jobs: HTTP {e.status}, Reason: {e.reason}, Body: {e.body}")
         return []
     except Exception as e:
         logger.exception(f"Unexpected error querying Kubernetes for running bots: {e}")
@@ -415,10 +391,7 @@ async def verify_container_running(container_id: str) -> bool:
         if e.status == 404:
             logger.debug(f"Job '{job_name}' not found (404), not running")
             return False
-        logger.warning(
-            f"Kubernetes API error checking Job '{job_name}': HTTP {e.status}, "
-            f"Reason: {e.reason}"
-        )
+        logger.warning(f"Kubernetes API error checking Job '{job_name}': HTTP {e.status}, Reason: {e.reason}")
         return False
     except Exception as e:
         logger.warning(f"Unexpected error checking Job '{job_name}': {e}")
