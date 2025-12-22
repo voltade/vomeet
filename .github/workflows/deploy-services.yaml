@@ -129,6 +129,21 @@ jobs:
             --wait \
             --timeout 10m
 
+      - name: Force rollout restart
+        run: |
+          echo "🔄 Forcing rollout restart for all deployments..."
+          kubectl rollout restart deployment/vomeet-admin-api -n ${{ env.NAMESPACE }}
+          kubectl rollout restart deployment/vomeet-api-gateway -n ${{ env.NAMESPACE }}
+          kubectl rollout restart deployment/vomeet-bot-manager -n ${{ env.NAMESPACE }}
+          kubectl rollout restart deployment/vomeet-transcription-collector -n ${{ env.NAMESPACE }}
+          
+          echo "⏳ Waiting for rollouts to complete..."
+          kubectl rollout status deployment/vomeet-admin-api -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/vomeet-api-gateway -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/vomeet-bot-manager -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/vomeet-transcription-collector -n ${{ env.NAMESPACE }} --timeout=120s
+          echo "✅ All rollouts complete!"
+
       - name: Run database migrations
         env:
           TAG: ${{ steps.tag.outputs.tag }}
