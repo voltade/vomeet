@@ -230,7 +230,7 @@ async def _get_full_transcript_segments(
                     end_time=seg_end,
                     text=seg_text.strip(),
                     language=chunk.language,
-                    speaker=None,
+                    speaker=chunk.speaker,
                     absolute_start_time=absolute_start_time,
                     absolute_end_time=absolute_end_time,
                     created_at=chunk.created_at,
@@ -250,7 +250,7 @@ async def _get_full_transcript_segments(
                 end_time=duration,
                 text=chunk.full_text.strip(),
                 language=chunk.language,
-                speaker=None,
+                speaker=chunk.speaker,
                 absolute_start_time=absolute_start_time,
                 absolute_end_time=absolute_end_time,
                 created_at=chunk.created_at,
@@ -263,7 +263,7 @@ async def _get_full_transcript_segments(
     sorted_segment_tuples = sorted(merged_segments_with_abs_time.values(), key=lambda item: item[0])
     segments = [segment_obj for abs_time, segment_obj in sorted_segment_tuples]
 
-    # 6. Deduplicate overlapping segments with identical text
+    # 6. Deduplicate overlapping or near-duplicate segments
     deduped: List[TranscriptionSegment] = []
     for seg in segments:
         if not deduped:
@@ -271,17 +271,32 @@ async def _get_full_transcript_segments(
             continue
 
         last = deduped[-1]
-        same_text = (seg.text or "").strip() == (last.text or "").strip()
-        overlaps = max(seg.start_time, last.start_time) < min(seg.end_time, last.end_time)
+        seg_text = (seg.text or "").strip().lower()
+        last_text = (last.text or "").strip().lower()
 
-        if same_text and overlaps:
-            # If current is fully inside last → drop current
-            if seg.start_time >= last.start_time and seg.end_time <= last.end_time:
-                continue
-            # If current fully contains last → replace with current
-            if seg.start_time <= last.start_time and seg.end_time >= last.end_time:
+        # Check for similar text (exact match or one contains the other)
+        same_text = seg_text == last_text
+        text_overlap = (seg_text in last_text) or (last_text in seg_text) if seg_text and last_text else False
+
+        # Use absolute times for overlap detection (more accurate across chunks)
+        abs_overlaps = False
+        if seg.absolute_start_time and seg.absolute_end_time and last.absolute_start_time and last.absolute_end_time:
+            abs_overlaps = (
+                seg.absolute_start_time < last.absolute_end_time and seg.absolute_end_time > last.absolute_start_time
+            )
+            # Also check for very close timestamps (within 2 seconds)
+            time_diff = abs((seg.absolute_start_time - last.absolute_start_time).total_seconds())
+            close_in_time = time_diff < 2.0
+        else:
+            # Fallback to relative times
+            abs_overlaps = max(seg.start_time, last.start_time) < min(seg.end_time, last.end_time)
+            close_in_time = abs(seg.start_time - last.start_time) < 2.0
+
+        if (same_text or text_overlap) and (abs_overlaps or close_in_time):
+            # Keep the longer/more complete segment
+            if len(seg_text) > len(last_text):
                 deduped[-1] = seg
-                continue
+            continue
 
         deduped.append(seg)
 
@@ -754,6 +769,7 @@ class CFProxyTranscriptionRequest(BaseModel):
     language: Optional[str] = None
     language_probability: Optional[float] = None
     duration: Optional[float] = None
+    speaker: Optional[str] = None  # Speaker name from meeting UI
 
 
 @router.post(
@@ -843,23 +859,10 @@ async def ingest_cf_proxy_transcription(
             if seg.text and seg.text.strip()
         ]
 
-    # Use audio_key for idempotent storage, fallback to session_id+chunk_index
+    # Use audio_key for storage, fallback to session_id+chunk_index
     audio_key = request.audio_key or f"{request.session_id}/{request.timestamp}-{request.chunk_index}.raw"
 
-    # Check if chunk already exists (idempotent)
-    existing_stmt = select(AudioChunk).where(AudioChunk.audio_key == audio_key)
-    existing_result = await db.execute(existing_stmt)
-    existing_chunk = existing_result.scalar_one_or_none()
-
-    if existing_chunk:
-        logger.info(f"[CF-Proxy] Chunk {audio_key} already exists, skipping (idempotent)")
-        return {
-            "status": "skipped",
-            "reason": "duplicate_chunk",
-            "meeting_id": meeting.id,
-            "chunk_id": existing_chunk.id,
-        }
-
+    # Store all chunks - deduplication handled later during AI processing
     # Create new AudioChunk record
     audio_chunk = AudioChunk(
         meeting_id=meeting.id,
@@ -872,6 +875,7 @@ async def ingest_cf_proxy_transcription(
         segments=segments_json,
         language=request.language,
         language_probability=request.language_probability,
+        speaker=request.speaker,
     )
     db.add(audio_chunk)
     await db.commit()

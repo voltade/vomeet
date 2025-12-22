@@ -41,6 +41,7 @@ interface WebhookJob {
   language?: string;
   languageProbability?: number;
   duration?: number;
+  speaker?: string;
 }
 
 type QueueJob = TranscriptionJob | WebhookJob;
@@ -53,6 +54,7 @@ export class WhisperSession extends DurableObject {
   private lastFlushTime = Date.now();
   private silentSamples = 0;
   private stateLoaded = false;
+  private currentSpeaker: string | null = null;
   private readonly BUFFER_DURATION_MS = 60000; // 60 seconds max
   private readonly SILENCE_THRESHOLD = 0.01; // RMS threshold for silence detection
   private readonly SILENCE_DURATION_MS = 2000; // 2 seconds of silence triggers flush
@@ -129,10 +131,28 @@ export class WhisperSession extends DurableObject {
   private async processMessage(ws: WebSocket, message: ArrayBuffer | string) {
     const env = this.env as Env;
 
-    // Handle JSON config message
+    // Handle JSON messages (config or speaker events)
     if (typeof message === "string") {
       try {
         const data = JSON.parse(message);
+        
+        // Handle speaker activity events
+        if (data.type === "speaker_activity" && data.payload) {
+          const { event_type, participant_name } = data.payload;
+          if (event_type === "SPEAKER_START") {
+            this.currentSpeaker = participant_name || null;
+            console.log(`[WhisperSession] Speaker started: ${this.currentSpeaker}`);
+          } else if (event_type === "SPEAKER_END") {
+            // Only clear if it's the same speaker
+            if (this.currentSpeaker === participant_name) {
+              this.currentSpeaker = null;
+            }
+            console.log(`[WhisperSession] Speaker ended: ${participant_name}`);
+          }
+          return;
+        }
+        
+        // Handle config message
         if (data.uid) {
           this.config = data as SessionConfig;
           await this.saveState(); // Persist config
@@ -145,7 +165,7 @@ export class WhisperSession extends DurableObject {
           console.log(`[WhisperSession] Config received for ${data.uid}`);
         }
       } catch (e) {
-        console.error("[WhisperSession] Error parsing config:", e);
+        console.error("[WhisperSession] Error parsing message:", e);
       }
       return;
     }
@@ -225,10 +245,11 @@ export class WhisperSession extends DurableObject {
         timestamp: String(timestamp),
         meetingId: String(this.config.meeting_id || ""),
         language: this.config.language || "",
+        speaker: this.currentSpeaker || "",
       }
     });
 
-    console.log(`[WhisperSession] Stored audio chunk: ${audioKey} (${combined.byteLength} bytes)`);
+    console.log(`[WhisperSession] Stored audio chunk: ${audioKey} (${combined.byteLength} bytes, speaker: ${this.currentSpeaker || "unknown"})`);
 
     // Queue transcription job
     const job: TranscriptionJob = {
@@ -304,7 +325,7 @@ export default {
 async function processTranscriptionJob(env: Env, job: TranscriptionJob): Promise<void> {
   console.log(`[Queue] Processing transcription job: ${job.audioKey}`);
   
-  const result = await transcribeAudio(env, job.audioKey);
+  const { result, speaker } = await transcribeAudio(env, job.audioKey);
   
   // Queue webhook delivery as separate job (if configured and has text)
   if (result.text && env.VOMEET_WEBHOOK_URL) {
@@ -328,10 +349,11 @@ async function processTranscriptionJob(env: Env, job: TranscriptionJob): Promise
       language: result.transcription_info?.language,
       languageProbability: result.transcription_info?.language_probability,
       duration: result.transcription_info?.duration,
+      speaker,
     };
     
     await env.WEBHOOK_QUEUE.send(webhookJob);
-    console.log(`[Queue] Queued webhook job for chunk ${job.chunkIndex}`);
+    console.log(`[Queue] Queued webhook job for chunk ${job.chunkIndex}, speaker: ${speaker || "unknown"}`);
   } else if (result.text) {
     console.log(`[Queue] Transcription complete (no collector configured): ${result.text.substring(0, 100)}...`);
   }
@@ -352,6 +374,7 @@ async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
     language: job.language,
     language_probability: job.languageProbability,
     duration: job.duration,
+    speaker: job.speaker,
   };
 
   const headers: Record<string, string> = {
@@ -377,7 +400,7 @@ async function processWebhookJob(env: Env, job: WebhookJob): Promise<void> {
 }
 
 // Transcribe audio from R2 using Cloudflare AI
-async function transcribeAudio(env: Env, audioKey: string): Promise<Ai_Cf_Openai_Whisper_Large_V3_Turbo_Output> {
+async function transcribeAudio(env: Env, audioKey: string): Promise<{ result: Ai_Cf_Openai_Whisper_Large_V3_Turbo_Output; speaker?: string }> {
   // Get audio from R2
   const object = await env.AUDIO_BUCKET.get(audioKey);
   if (!object) {
@@ -395,7 +418,7 @@ async function transcribeAudio(env: Env, audioKey: string): Promise<Ai_Cf_Openai
   const wavBuffer = float32ToWav(float32Array, parseInt(metadata.sampleRate || "16000"));
   const base64Audio = arrayBufferToBase64(wavBuffer);
 
-  console.log(`[Transcribe] Processing ${audioKey}, ${float32Array.length} samples`);
+  console.log(`[Transcribe] Processing ${audioKey}, ${float32Array.length} samples, speaker: ${metadata.speaker || "unknown"}`);
 
   // Call Cloudflare AI
   const result = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
@@ -407,7 +430,7 @@ async function transcribeAudio(env: Env, audioKey: string): Promise<Ai_Cf_Openai
 
   console.log(`[Transcribe] Result: ${result.text?.substring(0, 100)}...`);
   
-  return result;
+  return { result, speaker: metadata.speaker || undefined };
 }
 
 // Helper: Convert Float32 PCM to WAV

@@ -154,6 +154,7 @@ class AudioChunk(Base):
     segments = Column(JSONB, nullable=True)  # Array of {start, end, text, temperature, avg_logprob, ...}
     language = Column(String(10), nullable=True)  # e.g., 'en', 'es'
     language_probability = Column(Float, nullable=True)
+    speaker = Column(String(255), nullable=True)  # Speaker name detected from meeting UI
     created_at = Column(DateTime, server_default=func.now())
 
     meeting = relationship("Meeting")
