@@ -57,6 +57,12 @@ spec:
                 secretKeyRef:
                   name: google-integration-secrets
                   key: STATE_SECRET_KEY
+            - name: REDIS_URL
+              value: {{ include "vomeet.redisUrl" . }}
+            - name: BOT_MANAGER_URL
+              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8000"
+            - name: ENABLE_AUTO_JOIN_SCHEDULER
+              value: "false"
           livenessProbe:
             httpGet:
               path: /healthz
@@ -71,6 +77,114 @@ spec:
             periodSeconds: 5
           resources:
             {{- toYaml $config.resources | nindent 12 }}
+---
+# Auto-join worker deployment (runs RQ worker + scheduler)
+{{- if $config.autoJoin.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}-worker
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" (printf "%s-worker" $svc)) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" (printf "%s-worker" $svc)) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" (printf "%s-worker" $svc)) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ $svc }}-worker
+          image: {{ include "vomeet.image" (dict "root" . "service" $svc) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["python", "worker.py"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://{{ include "vomeet.databaseUser" . }}:$(DB_PASSWORD)@{{ include "vomeet.databaseHost" . }}:{{ include "vomeet.databasePort" . }}/{{ include "vomeet.databaseName" . }}"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-db
+                  key: password
+            - name: REDIS_URL
+              value: {{ include "vomeet.redisUrl" . }}
+            - name: BOT_MANAGER_URL
+              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8000"
+            - name: AUTO_JOIN_MINUTES_BEFORE
+              value: {{ $config.autoJoin.minutesBefore | quote }}
+            - name: AUTO_JOIN_CHECK_INTERVAL
+              value: {{ $config.autoJoin.checkInterval | quote }}
+          resources:
+            {{- toYaml $config.workerResources | nindent 12 }}
+---
+# RQ Scheduler deployment (schedules periodic jobs)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vomeet.fullname" . }}-{{ $svc }}-scheduler
+  labels:
+    {{- include "vomeet.serviceLabels" (dict "root" . "component" (printf "%s-scheduler" $svc)) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" (printf "%s-scheduler" $svc)) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vomeet.serviceSelectorLabels" (dict "root" . "component" (printf "%s-scheduler" $svc)) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ $svc }}-scheduler
+          image: {{ include "vomeet.image" (dict "root" . "service" $svc) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["python", "scheduler.py"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://{{ include "vomeet.databaseUser" . }}:$(DB_PASSWORD)@{{ include "vomeet.databaseHost" . }}:{{ include "vomeet.databasePort" . }}/{{ include "vomeet.databaseName" . }}"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vomeet.fullname" . }}-db
+                  key: password
+            - name: REDIS_URL
+              value: {{ include "vomeet.redisUrl" . }}
+            - name: BOT_MANAGER_URL
+              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8000"
+            - name: AUTO_JOIN_MINUTES_BEFORE
+              value: {{ $config.autoJoin.minutesBefore | quote }}
+            - name: AUTO_JOIN_CHECK_INTERVAL
+              value: {{ $config.autoJoin.checkInterval | quote }}
+          resources:
+            {{- toYaml $config.workerResources | nindent 12 }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service

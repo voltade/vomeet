@@ -111,6 +111,18 @@ google-integration:
     limits:
       cpu: 500m
       memory: 512Mi
+  # Auto-join configuration
+  autoJoin:
+    enabled: false  # Set to true to enable auto-join worker
+    minutesBefore: "2"  # Join meeting X minutes before start
+    checkInterval: "60"  # Check for upcoming meetings every X seconds
+  workerResources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
   env:
     LOG_LEVEL: INFO
 

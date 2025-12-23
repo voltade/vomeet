@@ -65,6 +65,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Auto-join scheduler configuration
+ENABLE_AUTO_JOIN_SCHEDULER = os.getenv("ENABLE_AUTO_JOIN_SCHEDULER", "false").lower() == "true"
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the auto-join scheduler on startup if enabled."""
+    if ENABLE_AUTO_JOIN_SCHEDULER:
+        try:
+            from scheduler import setup_scheduler
+            setup_scheduler()
+            logger.info("Auto-join scheduler initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize auto-join scheduler: {e}")
+    else:
+        logger.info("Auto-join scheduler is disabled (set ENABLE_AUTO_JOIN_SCHEDULER=true to enable)")
+
+
 # State signing key - should be set in production
 STATE_SECRET_KEY = os.getenv("STATE_SECRET_KEY", secrets.token_hex(32))
 
@@ -576,7 +594,11 @@ async def get_user_google_integration_settings(
     if not integration:
         raise HTTPException(status_code=404, detail="Google integration not found. Please connect first.")
 
-    return GoogleIntegrationUpdate(auto_join_enabled=integration.auto_join_enabled)
+    return GoogleIntegrationUpdate(
+        auto_join_enabled=integration.auto_join_enabled,
+        bot_name=integration.bot_name,
+        auto_join_mode=integration.auto_join_mode,
+    )
 
 
 @app.put(
@@ -612,6 +634,12 @@ async def update_user_google_integration_settings(
 
     if update.auto_join_enabled is not None:
         integration.auto_join_enabled = update.auto_join_enabled
+    if update.bot_name is not None:
+        integration.bot_name = update.bot_name
+    if update.auto_join_mode is not None:
+        if update.auto_join_mode not in ("all_events", "my_events_only"):
+            raise HTTPException(status_code=400, detail="auto_join_mode must be 'all_events' or 'my_events_only'")
+        integration.auto_join_mode = update.auto_join_mode
 
     await db.commit()
     await db.refresh(integration)
@@ -800,6 +828,10 @@ async def get_user_calendar_events(
                 )
             )
 
+        # Detect if the current user created or organizes this event
+        is_creator_self = item.get("creator", {}).get("self", False)
+        is_organizer_self = item.get("organizer", {}).get("self", False)
+
         events.append(
             CalendarEvent(
                 id=item["id"],
@@ -812,6 +844,8 @@ async def get_user_calendar_events(
                 location=item.get("location"),
                 attendees=attendees,
                 organizer_email=item.get("organizer", {}).get("email"),
+                is_creator_self=is_creator_self,
+                is_organizer_self=is_organizer_self,
                 status=item.get("status", "confirmed"),
                 html_link=item.get("htmlLink"),
             )

@@ -289,6 +289,8 @@ class AccountUserGoogleIntegration(Base):
     token_expires_at = Column(DateTime, nullable=True)  # When access token expires
     scopes = Column(JSONB, nullable=True)  # List of granted scopes
     auto_join_enabled = Column(sqlalchemy.Boolean, nullable=False, default=False)
+    bot_name = Column(String(100), nullable=True, default="Notetaker")  # Name shown in meeting
+    auto_join_mode = Column(String(50), nullable=False, default="all_events")  # "all_events" or "my_events_only"
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

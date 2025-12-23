@@ -232,7 +232,7 @@ async def start_bot_container(
         "redisUrl": REDIS_URL,
         "container_name": container_name,  # ADDED: Container name for identification
         "automaticLeave": {
-            "waitingRoomTimeout": 300000,
+            "waitingRoomTimeout": 900000,
             "noOneJoinedTimeout": 120000,
             "everyoneLeftTimeout": 60000,
         },

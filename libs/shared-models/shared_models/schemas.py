@@ -500,6 +500,8 @@ class AccountUserGoogleIntegrationResponse(BaseModel):
     picture: Optional[str] = None
     scopes: Optional[List[str]] = None
     auto_join_enabled: bool
+    bot_name: Optional[str] = "Notetaker"
+    auto_join_mode: str = "all_events"
     connected_at: datetime = Field(..., alias="created_at")
     updated_at: datetime
 
@@ -1051,6 +1053,10 @@ class GoogleIntegrationUpdate(BaseModel):
     """Request to update Google integration settings"""
 
     auto_join_enabled: Optional[bool] = Field(None, description="Enable/disable auto-join for meetings")
+    bot_name: Optional[str] = Field(None, max_length=100, description="Name shown when bot joins meeting")
+    auto_join_mode: Optional[str] = Field(
+        None, description="Which events to auto-join: 'all_events' or 'my_events_only'"
+    )
 
 
 class CalendarEventAttendee(BaseModel):
@@ -1076,6 +1082,8 @@ class CalendarEvent(BaseModel):
     location: Optional[str] = Field(None, description="Event location")
     attendees: List[CalendarEventAttendee] = Field(default_factory=list)
     organizer_email: Optional[str] = None
+    is_creator_self: bool = Field(False, description="True if the authenticated user created this event")
+    is_organizer_self: bool = Field(False, description="True if the authenticated user is the organizer")
     status: str = Field("confirmed", description="Event status: confirmed, tentative, cancelled")
     html_link: Optional[str] = Field(None, description="Link to view event in Google Calendar")
 

@@ -139,7 +139,7 @@ async def start_bot_container(
         "redisUrl": K8S_REDIS_URL,
         "container_name": f"vomeet-bot-{meeting_id}-{connection_id[:8]}",
         "automaticLeave": {
-            "waitingRoomTimeout": 300000,
+            "waitingRoomTimeout": 900000,
             "noOneJoinedTimeout": 120000,
             "everyoneLeftTimeout": 60000,
         },
