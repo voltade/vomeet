@@ -55,9 +55,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "vomeet.fullname" . }}-db-credentials
                   key: password
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
