@@ -321,8 +321,9 @@ def check_and_enqueue_auto_joins():
 
             for user in users:
                 # Enqueue individual job for each user
+                # Use string path so worker can import the function properly
                 queue.enqueue(
-                    process_auto_join_for_user,
+                    "scheduler.process_auto_join_for_user",
                     account_user_id=user["account_user_id"],
                     account_id=user["account_id"],
                     external_user_id=user["external_user_id"],
@@ -352,14 +353,15 @@ def setup_scheduler():
 
     # Clear any existing auto-join jobs
     for job in scheduler.get_jobs():
-        if job.func_name == "scheduler.check_and_enqueue_auto_joins":
+        if "check_and_enqueue_auto_joins" in str(job.func_name):
             scheduler.cancel(job)
             logger.info(f"Cancelled existing scheduler job: {job.id}")
 
     # Schedule the auto-join check to run every AUTO_JOIN_CHECK_INTERVAL seconds
+    # Use string path so worker can import the function properly
     scheduler.schedule(
         scheduled_time=datetime.now(timezone.utc),
-        func=check_and_enqueue_auto_joins,
+        func="scheduler.check_and_enqueue_auto_joins",
         interval=AUTO_JOIN_CHECK_INTERVAL,
         repeat=None,  # Repeat indefinitely
         queue_name="auto_join",
