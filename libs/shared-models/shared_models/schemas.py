@@ -645,7 +645,7 @@ class MeetingResponse(
     BaseModel
 ):  # Not inheriting from MeetingBase anymore to avoid duplicate fields if DB model is used directly
     id: int = Field(..., description="Internal database ID for the meeting")
-    user_id: int
+    user_id: Optional[int] = Field(None, description="Deprecated user_id for backward compatibility")
     platform: Platform  # Use the enum type
     native_meeting_id: Optional[str] = Field(
         None, description="The native meeting identifier provided during creation"
