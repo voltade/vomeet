@@ -2,9 +2,11 @@
 Send transcript.ready webhook after meeting ends with full transcript data.
 
 This task runs after the bot.ended webhook and aggregation tasks.
-It fetches the complete transcript and sends it to the account's webhook URL.
+It waits 1 minute after bot exit to ensure transcript is fully processed,
+then fetches the complete transcript and sends it to the account's webhook URL.
 """
 
+import asyncio
 import logging
 import httpx
 import hmac
@@ -19,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Priority: lower runs first. Runs last after bot.ended (20) so transcript is fully processed.
 PRIORITY = 30
 
+# Delay in seconds before sending transcript webhook (allows aggregation to complete)
+TRANSCRIPT_DELAY_SECONDS = 60
+
 
 def compute_signature(payload: str, secret: str) -> str:
     """Compute HMAC-SHA256 signature for webhook payload."""
@@ -30,8 +35,14 @@ async def run(meeting: Meeting, db: AsyncSession):
     Sends a transcript.ready webhook with the complete transcript data.
 
     This runs after aggregate_transcription.py and send_webhook.py (bot.ended).
+    Waits 1 minute to ensure transcript aggregation is complete.
     """
     logger.info(f"Executing send_transcript_webhook task for meeting {meeting.id}")
+    logger.info(f"Waiting {TRANSCRIPT_DELAY_SECONDS} seconds before sending transcript webhook...")
+    
+    await asyncio.sleep(TRANSCRIPT_DELAY_SECONDS)
+    
+    logger.info(f"Delay complete, proceeding to send transcript webhook for meeting {meeting.id}")
 
     try:
         # Get account from meeting
