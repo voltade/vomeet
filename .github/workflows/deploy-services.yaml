@@ -136,6 +136,8 @@ jobs:
           kubectl rollout restart deployment/vomeet-api-gateway -n ${{ env.NAMESPACE }}
           kubectl rollout restart deployment/vomeet-bot-manager -n ${{ env.NAMESPACE }}
           kubectl rollout restart deployment/vomeet-google-integration -n ${{ env.NAMESPACE }}
+          kubectl rollout restart deployment/vomeet-google-integration-scheduler -n ${{ env.NAMESPACE }} || true
+          kubectl rollout restart deployment/vomeet-google-integration-worker -n ${{ env.NAMESPACE }} || true
           kubectl rollout restart deployment/vomeet-transcription-collector -n ${{ env.NAMESPACE }}
           
           echo "⏳ Waiting for rollouts to complete..."
@@ -143,6 +145,8 @@ jobs:
           kubectl rollout status deployment/vomeet-api-gateway -n ${{ env.NAMESPACE }} --timeout=120s
           kubectl rollout status deployment/vomeet-bot-manager -n ${{ env.NAMESPACE }} --timeout=120s
           kubectl rollout status deployment/vomeet-google-integration -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/vomeet-google-integration-scheduler -n ${{ env.NAMESPACE }} --timeout=120s || true
+          kubectl rollout status deployment/vomeet-google-integration-worker -n ${{ env.NAMESPACE }} --timeout=120s || true
           kubectl rollout status deployment/vomeet-transcription-collector -n ${{ env.NAMESPACE }} --timeout=120s
           echo "✅ All rollouts complete!"
 
