@@ -40,9 +40,9 @@ spec:
               protocol: TCP
           env:
             - name: DB_HOST
-              value: {{ include "vomeet.dbHost" . }}
+              value: {{ include "vomeet.databaseHost" . }}
             - name: DB_PORT
-              value: {{ include "vomeet.dbPort" . | quote }}
+              value: {{ include "vomeet.databasePort" . | quote }}
             - name: DB_NAME
               value: {{ .Values.global.database.name }}
             - name: DB_USER
