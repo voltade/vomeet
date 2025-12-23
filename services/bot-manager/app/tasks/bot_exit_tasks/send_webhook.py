@@ -1,3 +1,9 @@
+"""
+Send bot.ended webhook after meeting ends.
+
+This sends immediately after aggregation so clients know the meeting finished.
+"""
+
 import logging
 import httpx
 import hmac
@@ -8,6 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared_models.models import Meeting, Account
 
 logger = logging.getLogger(__name__)
+
+# Priority: lower runs first. Runs after aggregation (10), before transcript webhook (30).
+PRIORITY = 20
 
 
 def compute_signature(payload: str, secret: str) -> str:

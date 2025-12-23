@@ -1,9 +1,18 @@
+"""
+Aggregate transcription data after meeting ends.
+
+This task must run before webhooks so the meeting data is complete.
+"""
+
 import logging
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from shared_models.models import Meeting
 
 logger = logging.getLogger(__name__)
+
+# Priority: lower runs first. Aggregation must run before webhooks.
+PRIORITY = 10
 
 
 async def run(meeting: Meeting, db: AsyncSession):
@@ -16,28 +25,18 @@ async def run(meeting: Meeting, db: AsyncSession):
 
     try:
         # The collector service is internal, so we can use its service name
-        collector_url = (
-            f"http://transcription-collector:8000/internal/transcripts/{meeting_id}"
-        )
+        collector_url = f"http://transcription-collector:8000/internal/transcripts/{meeting_id}"
 
         async with httpx.AsyncClient() as client:
-            logger.info(
-                f"Calling transcription-collector for meeting {meeting_id} at {collector_url}"
-            )
-            response = await client.get(
-                collector_url, timeout=30.0
-            )  # Increased timeout
+            logger.info(f"Calling transcription-collector for meeting {meeting_id} at {collector_url}")
+            response = await client.get(collector_url, timeout=30.0)  # Increased timeout
 
         if response.status_code == 200:
             transcription_segments = response.json()
-            logger.info(
-                f"Received {len(transcription_segments)} segments from collector for meeting {meeting_id}"
-            )
+            logger.info(f"Received {len(transcription_segments)} segments from collector for meeting {meeting_id}")
 
             if not transcription_segments:
-                logger.info(
-                    f"No transcription segments returned for meeting {meeting_id}. Nothing to aggregate."
-                )
+                logger.info(f"No transcription segments returned for meeting {meeting_id}. Nothing to aggregate.")
                 return
 
             unique_speakers = set()
@@ -64,10 +63,7 @@ async def run(meeting: Meeting, db: AsyncSession):
                 existing_data = meeting.data or {}
 
                 # Update participants if not present
-                if (
-                    "participants" not in existing_data
-                    and "participants" in aggregated_data
-                ):
+                if "participants" not in existing_data and "participants" in aggregated_data:
                     existing_data["participants"] = aggregated_data["participants"]
                     data_changed = True
 
@@ -79,18 +75,14 @@ async def run(meeting: Meeting, db: AsyncSession):
                 if data_changed:
                     meeting.data = existing_data
                     # The caller is responsible for the commit
-                    logger.info(
-                        f"Auto-aggregated data for meeting {meeting_id}: {aggregated_data}"
-                    )
+                    logger.info(f"Auto-aggregated data for meeting {meeting_id}: {aggregated_data}")
                 else:
                     logger.info(
                         f"Data for 'participants' and 'languages' already exists in meeting {meeting_id}. No update performed."
                     )
 
             else:
-                logger.info(
-                    f"No new participants or languages to aggregate for meeting {meeting_id}"
-                )
+                logger.info(f"No new participants or languages to aggregate for meeting {meeting_id}")
 
         else:
             logger.error(

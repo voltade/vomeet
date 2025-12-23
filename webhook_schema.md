@@ -23,7 +23,16 @@ transcript.ready
 transcript.segment
 ```
 
+## Event Order
+
+When a meeting ends, webhooks are sent in this order:
+
+1. **`bot.ended`** - Sent immediately when bot exits the meeting
+2. **`transcript.ready`** - Sent after transcript is finalized with full transcript data
+
 ## Payload Structure
+
+### Bot Events (bot.*)
 
 ```json
 {
@@ -48,6 +57,51 @@ transcript.segment
     "data": {},
     "created_at": "2025-12-23T10:28:00.000000",
     "updated_at": "2025-12-23T10:30:00.000000"
+  }
+}
+```
+
+### transcript.ready Event
+
+Sent after the meeting ends with the complete transcript:
+
+```json
+{
+  "event": "transcript.ready",
+  "timestamp": "2025-12-23T10:45:00.000000",
+  "meeting": {
+    "id": 123,
+    "account_id": 1,
+    "platform": "google_meet",
+    "native_meeting_id": "abc-defg-hij",
+    "constructed_meeting_url": "https://meet.google.com/abc-defg-hij",
+    "status": "completed",
+    "start_time": "2025-12-23T10:00:00.000000",
+    "end_time": "2025-12-23T10:44:00.000000",
+    "data": {
+      "participants": ["Alice", "Bob"],
+      "languages": ["en"]
+    }
+  },
+  "transcript": {
+    "segment_count": 42,
+    "segments": [
+      {
+        "speaker": "Alice",
+        "text": "Hello everyone, thanks for joining.",
+        "timestamp": "2025-12-23T10:00:05.000000",
+        "language": "en"
+      },
+      {
+        "speaker": "Bob", 
+        "text": "Hi Alice, glad to be here.",
+        "timestamp": "2025-12-23T10:00:12.000000",
+        "language": "en"
+      }
+    ],
+    "full_text": "Alice: Hello everyone, thanks for joining.\nBob: Hi Alice, glad to be here.",
+    "participants": ["Alice", "Bob"],
+    "languages": ["en"]
   }
 }
 ```

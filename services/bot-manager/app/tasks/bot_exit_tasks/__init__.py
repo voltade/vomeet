@@ -25,18 +25,16 @@ async def run_all_tasks(meeting_id: int):
     async with async_session_local() as db:
         try:
             # Eager load the User object to avoid separate queries in tasks
-            meeting = await db.get(
-                Meeting, meeting_id, options=[selectinload(Meeting.user)]
-            )
+            meeting = await db.get(Meeting, meeting_id, options=[selectinload(Meeting.user)])
             if not meeting:
-                logger.error(
-                    f"Could not find meeting with ID {meeting_id} to run post-meeting tasks."
-                )
+                logger.error(f"Could not find meeting with ID {meeting_id} to run post-meeting tasks.")
                 return
 
             current_dir = os.path.dirname(__file__)
             current_package = "app.tasks.bot_exit_tasks"
 
+            # Discover and load all task modules
+            task_modules = []
             for filename in os.listdir(current_dir):
                 if filename.endswith(".py") and filename != "__init__.py":
                     module_name = filename[:-3]
@@ -44,27 +42,12 @@ async def run_all_tasks(meeting_id: int):
                         full_module_path = f"{current_package}.{module_name}"
                         module = importlib.import_module(full_module_path)
 
-                        if hasattr(module, "run") and inspect.iscoroutinefunction(
-                            module.run
-                        ):
-                            logger.info(
-                                f"Found task in '{module_name}'. Executing for meeting {meeting_id}..."
-                            )
-                            try:
-                                # All tasks are now async and receive the same arguments
-                                await module.run(meeting, db)
-                                logger.info(
-                                    f"Successfully executed task in '{module_name}' for meeting {meeting_id}."
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"Error executing task in '{module_name}' for meeting {meeting_id}: {e}",
-                                    exc_info=True,
-                                )
+                        if hasattr(module, "run") and inspect.iscoroutinefunction(module.run):
+                            # Get priority (default to 50, lower runs first)
+                            priority = getattr(module, "PRIORITY", 50)
+                            task_modules.append((priority, module_name, module))
                         else:
-                            logger.debug(
-                                f"Module '{module_name}' does not have a valid async 'run' function."
-                            )
+                            logger.debug(f"Module '{module_name}' does not have a valid async 'run' function.")
 
                     except ImportError as e:
                         logger.error(
@@ -72,10 +55,26 @@ async def run_all_tasks(meeting_id: int):
                             exc_info=True,
                         )
 
+            # Sort by priority (lower priority number runs first)
+            task_modules.sort(key=lambda x: x[0])
+
+            # Execute tasks in priority order
+            for priority, module_name, module in task_modules:
+                logger.info(
+                    f"Found task in '{module_name}' (priority={priority}). Executing for meeting {meeting_id}..."
+                )
+                try:
+                    # All tasks are now async and receive the same arguments
+                    await module.run(meeting, db)
+                    logger.info(f"Successfully executed task in '{module_name}' for meeting {meeting_id}.")
+                except Exception as e:
+                    logger.error(
+                        f"Error executing task in '{module_name}' for meeting {meeting_id}: {e}",
+                        exc_info=True,
+                    )
+
             await db.commit()
-            logger.info(
-                f"All post-meeting tasks run and changes committed for meeting_id: {meeting_id}"
-            )
+            logger.info(f"All post-meeting tasks run and changes committed for meeting_id: {meeting_id}")
 
         except Exception as e:
             logger.error(
