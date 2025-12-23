@@ -22,7 +22,7 @@ import sys
 import logging
 
 from redis import Redis
-from rq import Worker, Queue, Connection
+from rq import Worker, Queue
 
 # Add the service directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -45,9 +45,8 @@ def run_worker():
     logger.info(f"Starting RQ worker, listening on queues: {[q.name for q in queues]}")
     logger.info(f"Redis URL: {REDIS_URL}")
 
-    with Connection(redis_conn):
-        worker = Worker(queues)
-        worker.work(with_scheduler=True)
+    worker = Worker(queues, connection=redis_conn)
+    worker.work(with_scheduler=True)
 
 
 if __name__ == "__main__":
