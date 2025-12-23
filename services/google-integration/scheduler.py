@@ -246,6 +246,9 @@ def process_auto_join_for_user(
     now = datetime.now(timezone.utc)
     join_threshold = now + timedelta(minutes=AUTO_JOIN_MINUTES_BEFORE)
 
+    # Get Redis connection for deduplication
+    redis_conn = get_redis_connection()
+
     for event in events:
         # Skip if meeting hasn't started yet and is more than AUTO_JOIN_MINUTES_BEFORE away
         if event["start_time"] > join_threshold:
@@ -258,17 +261,27 @@ def process_auto_join_for_user(
                 logger.debug(f"Skipping '{event['summary']}' - user is not creator/organizer (mode: my_events_only)")
                 continue
 
+        # Check if we've already tried to join this meeting (deduplication)
+        dedup_key = f"auto_join:spawned:{account_id}:{event['native_meeting_id']}"
+        if redis_conn.exists(dedup_key):
+            logger.debug(f"Skipping '{event['summary']}' - already attempted to join (dedup key exists)")
+            continue
+
         logger.info(
             f"Auto-joining meeting '{event['summary']}' ({event['native_meeting_id']}) for user {external_user_id}"
         )
 
         # Spawn the bot
-        spawn_bot_sync(
+        success = spawn_bot_sync(
             api_key=api_key,
             native_meeting_id=event["native_meeting_id"],
             bot_name=bot_name or "Notetaker",
             event_summary=event["summary"],
         )
+
+        # Mark as attempted (expire after 2 hours to allow rejoining if meeting is rescheduled)
+        if success:
+            redis_conn.setex(dedup_key, 7200, "1")  # 2 hour TTL
 
 
 def check_and_enqueue_auto_joins():

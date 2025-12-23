@@ -534,7 +534,7 @@ async def request_bot(
             Meeting.account_id == account.id,
             Meeting.platform == req.platform.value,
             Meeting.platform_specific_id == native_meeting_id,
-            Meeting.status.in_(["requested", "active"]),  # Do NOT block on 'stopping' to allow immediate new bot
+            Meeting.status.in_(["requested", "joining", "awaiting_admission", "active"]),  # All non-terminal statuses
         )
         .order_by(desc(Meeting.created_at))
         .limit(1)
