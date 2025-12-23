@@ -60,7 +60,7 @@ spec:
             - name: REDIS_URL
               value: {{ include "vomeet.redisUrl" . }}
             - name: BOT_MANAGER_URL
-              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8000"
+              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8080"
             - name: ENABLE_AUTO_JOIN_SCHEDULER
               value: "false"
           livenessProbe:
@@ -130,7 +130,7 @@ spec:
             - name: REDIS_URL
               value: {{ include "vomeet.redisUrl" . }}
             - name: BOT_MANAGER_URL
-              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8000"
+              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8080"
             - name: AUTO_JOIN_MINUTES_BEFORE
               value: {{ $config.autoJoin.minutesBefore | quote }}
             - name: AUTO_JOIN_CHECK_INTERVAL
@@ -189,7 +189,7 @@ spec:
             - name: REDIS_URL
               value: {{ include "vomeet.redisUrl" . }}
             - name: BOT_MANAGER_URL
-              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8000"
+              value: "http://{{ include "vomeet.fullname" . }}-bot-manager:8080"
             - name: AUTO_JOIN_MINUTES_BEFORE
               value: {{ $config.autoJoin.minutesBefore | quote }}
             - name: AUTO_JOIN_CHECK_INTERVAL
