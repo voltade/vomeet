@@ -32,6 +32,15 @@ logger = logging.getLogger(__name__)
 # Environment configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 BOT_MANAGER_URL = os.getenv("BOT_MANAGER_URL", "http://bot-manager:8000")
+
+# Database configuration - individual components for passwords with special chars
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "vomeet")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
+
+# Legacy: DATABASE_URL for backwards compatibility
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/vomeet")
 
 # Auto-join timing configuration
@@ -274,19 +283,13 @@ def check_and_enqueue_auto_joins():
 
     logger.info("Running auto-join check...")
 
-    # Use sync psycopg2 for the worker
-    db_url = get_sync_db_url()
-    # Parse the URL
-    import urllib.parse
-
-    parsed = urllib.parse.urlparse(db_url)
-
+    # Use individual DB components to avoid URL parsing issues with special chars in password
     conn = psycopg2.connect(
-        host=parsed.hostname,
-        port=parsed.port or 5432,
-        database=parsed.path[1:],  # Remove leading /
-        user=parsed.username,
-        password=parsed.password,
+        host=DB_HOST,
+        port=int(DB_PORT),
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
     )
 
     queue = get_queue()

@@ -114,13 +114,19 @@ spec:
               drop:
                 - ALL
           env:
+            - name: DB_HOST
+              value: {{ include "vomeet.databaseHost" . }}
+            - name: DB_PORT
+              value: {{ include "vomeet.databasePort" . | quote }}
+            - name: DB_NAME
+              value: {{ include "vomeet.databaseName" . }}
+            - name: DB_USER
+              value: {{ include "vomeet.databaseUser" . }}
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "vomeet.fullname" . }}-db
                   key: password
-            - name: DATABASE_URL
-              value: "postgresql://{{ include "vomeet.databaseUser" . }}:$(DB_PASSWORD)@{{ include "vomeet.databaseHost" . }}:{{ include "vomeet.databasePort" . }}/{{ include "vomeet.databaseName" . }}"
             - name: REDIS_URL
               value: {{ include "vomeet.redisUrl" . }}
             - name: BOT_MANAGER_URL
@@ -167,13 +173,19 @@ spec:
               drop:
                 - ALL
           env:
+            - name: DB_HOST
+              value: {{ include "vomeet.databaseHost" . }}
+            - name: DB_PORT
+              value: {{ include "vomeet.databasePort" . | quote }}
+            - name: DB_NAME
+              value: {{ include "vomeet.databaseName" . }}
+            - name: DB_USER
+              value: {{ include "vomeet.databaseUser" . }}
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "vomeet.fullname" . }}-db
                   key: password
-            - name: DATABASE_URL
-              value: "postgresql://{{ include "vomeet.databaseUser" . }}:$(DB_PASSWORD)@{{ include "vomeet.databaseHost" . }}:{{ include "vomeet.databasePort" . }}/{{ include "vomeet.databaseName" . }}"
             - name: REDIS_URL
               value: {{ include "vomeet.redisUrl" . }}
             - name: BOT_MANAGER_URL
