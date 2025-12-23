@@ -39,9 +39,9 @@ async def run(meeting: Meeting, db: AsyncSession):
     """
     logger.info(f"Executing send_transcript_webhook task for meeting {meeting.id}")
     logger.info(f"Waiting {TRANSCRIPT_DELAY_SECONDS} seconds before sending transcript webhook...")
-    
+
     await asyncio.sleep(TRANSCRIPT_DELAY_SECONDS)
-    
+
     logger.info(f"Delay complete, proceeding to send transcript webhook for meeting {meeting.id}")
 
     try:
