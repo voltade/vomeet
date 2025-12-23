@@ -424,6 +424,110 @@ class UserUpdate(BaseModel):
 
 # --- END UserUpdate Schema ---
 
+
+# --- Account Schemas (B2B API) ---
+
+
+class AccountCreate(BaseModel):
+    """Request to create a new account (external app)"""
+
+    name: str = Field(..., min_length=1, max_length=255, description="Company/app name")
+    google_client_id: Optional[str] = Field(None, description="Optional Google OAuth client ID")
+    google_client_secret: Optional[str] = Field(None, description="Optional Google OAuth client secret")
+    webhook_url: Optional[str] = Field(None, description="Webhook URL for event notifications")
+    max_concurrent_bots: int = Field(default=5, ge=1, description="Maximum concurrent bots allowed")
+
+
+class AccountUpdate(BaseModel):
+    """Request to update an account"""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    webhook_url: Optional[str] = None
+    max_concurrent_bots: Optional[int] = Field(None, ge=1)
+    enabled: Optional[bool] = None
+
+
+class AccountResponse(BaseModel):
+    """Response containing account details"""
+
+    id: int
+    name: str
+    api_key: str
+    google_client_id: Optional[str] = None
+    webhook_url: Optional[str] = None
+    max_concurrent_bots: int
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AccountUserCreate(BaseModel):
+    """Request to create/get an account user"""
+
+    external_user_id: str = Field(..., min_length=1, max_length=255, description="Your app's user ID")
+    email: Optional[EmailStr] = Field(None, description="Optional user email")
+    name: Optional[str] = Field(None, max_length=255, description="Optional user name")
+
+
+class AccountUserResponse(BaseModel):
+    """Response containing account user details"""
+
+    id: int
+    account_id: int
+    external_user_id: str
+    email: Optional[str] = None
+    name: Optional[str] = None
+    has_google_integration: bool = False
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AccountUserGoogleIntegrationResponse(BaseModel):
+    """Response showing Google integration status for an account user"""
+
+    id: int
+    account_user_id: int
+    google_user_id: str
+    email: str
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    scopes: Optional[List[str]] = None
+    auto_join_enabled: bool
+    connected_at: datetime = Field(..., alias="created_at")
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+
+class AccountCalendarAuthTokenRequest(BaseModel):
+    """Request to get a calendar auth token for an account user"""
+
+    external_user_id: str = Field(..., min_length=1, max_length=255, description="Your app's user ID")
+
+
+class AccountCalendarAuthTokenResponse(BaseModel):
+    """Response containing calendar auth token for OAuth flow"""
+
+    calendar_auth_token: str = Field(
+        ...,
+        description="Token to include in OAuth state. Valid for 10 minutes.",
+    )
+    account_user_id: int = Field(..., description="Internal ID of the account user")
+    expires_in: int = Field(default=600, description="Token validity in seconds")
+
+
+# --- END Account Schemas ---
+
+
 # --- Meeting Schemas ---
 
 
@@ -902,6 +1006,13 @@ class UserAnalyticsResponse(BaseModel):
 
 
 # --- Google Calendar Integration Schemas ---
+
+
+class CalendarAuthTokenResponse(BaseModel):
+    """Response containing calendar auth token for OAuth flow"""
+
+    calendar_auth_token: str = Field(..., description="Token to include in OAuth state. Valid for 10 minutes.")
+    expires_in: int = Field(default=600, description="Token validity in seconds")
 
 
 class GoogleAuthUrlResponse(BaseModel):

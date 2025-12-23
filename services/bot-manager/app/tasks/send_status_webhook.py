@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from shared_models.models import Meeting, User, Webhook
+from shared_models.models import Meeting, Account, Webhook
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ async def run(
     status_change_info: Optional[Dict[str, Any]] = None,
 ):
     """
-    Sends webhooks for meeting status changes to all configured webhook endpoints.
+    Sends webhooks for meeting status changes to the Account's webhook endpoint.
 
     Args:
         meeting: Meeting object with current status
@@ -124,9 +124,19 @@ async def run(
     logger.info(f"Executing send_status_webhook task for meeting {meeting.id} with status {meeting.status}")
 
     try:
-        user = meeting.user
-        if not user:
-            logger.error(f"Could not find user on meeting object {meeting.id}")
+        # Get account from meeting
+        if not meeting.account_id:
+            logger.warning(f"Meeting {meeting.id} has no account_id, skipping webhook")
+            return
+
+        account = await db.get(Account, meeting.account_id)
+        if not account:
+            logger.error(f"Could not find account {meeting.account_id} for meeting {meeting.id}")
+            return
+
+        # Check if account has webhook configured
+        if not account.webhook_url:
+            logger.info(f"No webhook configured for account {account.id} ({account.name}), skipping")
             return
 
         # Get the event type based on current status
@@ -144,7 +154,7 @@ async def run(
             },
             "meeting": {
                 "id": meeting.id,
-                "user_id": meeting.user_id,
+                "account_id": meeting.account_id,
                 "platform": meeting.platform,
                 "native_meeting_id": meeting.native_meeting_id,
                 "constructed_meeting_url": meeting.constructed_meeting_url,
@@ -158,62 +168,42 @@ async def run(
             },
         }
 
-        # Query all webhooks for this user
-        result = await db.execute(select(Webhook).where(Webhook.user_id == user.id))
-        webhooks: List[Webhook] = result.scalars().all()
+        # Send webhook to account's endpoint
+        try:
+            payload_json = json.dumps(payload, default=str)
 
-        # Also check legacy webhook_url in user.data for backwards compatibility
-        legacy_webhook_url = user.data.get("webhook_url") if user.data and isinstance(user.data, dict) else None
+            headers = {
+                "Content-Type": "application/json",
+                "X-Vomeet-Event": event_type,
+                "X-Vomeet-Timestamp": datetime.utcnow().isoformat(),
+            }
 
-        if not webhooks and not legacy_webhook_url:
-            logger.info(f"No webhooks configured for user {user.email} (meeting {meeting.id})")
-            return
+            # Add HMAC signature if secret is configured
+            if account.webhook_secret:
+                signature = compute_signature(payload_json, account.webhook_secret)
+                headers["X-Vomeet-Signature"] = f"sha256={signature}"
 
-        # Send to all matching webhooks
-        sent_count = 0
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    account.webhook_url,
+                    content=payload_json,
+                    headers=headers,
+                    timeout=30.0,
+                )
 
-        for webhook in webhooks:
-            if should_send_webhook(webhook, event_type):
-                success = await send_to_webhook(webhook, payload, event_type)
-                if success:
-                    sent_count += 1
-
-        # Send to legacy webhook URL (always sends for backwards compatibility)
-        if legacy_webhook_url:
-            try:
-                async with httpx.AsyncClient() as client:
-                    # Legacy format for backwards compatibility
-                    legacy_payload = {
-                        "event_type": "meeting.status_change",
-                        "meeting": payload["meeting"],
-                    }
-                    if status_change_info:
-                        legacy_payload["status_change"] = {
-                            "from": status_change_info.get("old_status"),
-                            "to": status_change_info.get("new_status", meeting.status),
-                            "reason": status_change_info.get("reason"),
-                            "timestamp": status_change_info.get("timestamp"),
-                            "transition_source": status_change_info.get("transition_source"),
-                        }
-
-                    response = await client.post(
-                        legacy_webhook_url,
-                        json=legacy_payload,
-                        timeout=30.0,
-                        headers={"Content-Type": "application/json"},
+                if 200 <= response.status_code < 300:
+                    logger.info(
+                        f"Successfully sent webhook for meeting {meeting.id} to {account.webhook_url} (event: {event_type})"
+                    )
+                else:
+                    logger.warning(
+                        f"Webhook to {account.webhook_url} returned status {response.status_code}: {response.text[:200]}"
                     )
 
-                    if 200 <= response.status_code < 300:
-                        logger.info(
-                            f"Successfully sent legacy webhook for meeting {meeting.id} to {legacy_webhook_url}"
-                        )
-                        sent_count += 1
-                    else:
-                        logger.warning(f"Legacy webhook returned status {response.status_code}: {response.text[:200]}")
-            except Exception as e:
-                logger.error(f"Failed to send legacy webhook: {e}")
-
-        logger.info(f"Sent {sent_count} webhook(s) for meeting {meeting.id} (event: {event_type})")
+        except httpx.RequestError as e:
+            logger.error(f"Failed to send webhook to {account.webhook_url}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error sending webhook to {account.webhook_url}: {e}", exc_info=True)
 
     except Exception as e:
         logger.error(

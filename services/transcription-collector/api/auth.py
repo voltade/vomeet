@@ -9,35 +9,34 @@ from config import API_KEY_NAME
 
 # Imports from shared libraries
 from shared_models.database import get_db
-from shared_models.models import APIToken, User
+from shared_models.models import Account
 
 logger = logging.getLogger(__name__)
 
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 
-async def get_current_user(
+async def get_account_from_api_key(
     api_key: str = Security(api_key_header), db: AsyncSession = Depends(get_db)
-) -> User:
-    """Dependency to verify X-API-Key and return the associated User."""
+) -> Account:
+    """
+    Dependency to verify X-API-Key as an Account API key (B2B flow).
+    This is the authentication method for all API integrations.
+    """
     if not api_key:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Missing API token"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Missing API key",
         )
 
-    # Find the token in the database
-    result = await db.execute(
-        select(APIToken, User)
-        .join(User, APIToken.user_id == User.id)
-        .where(APIToken.token == api_key)
+    result = await db.execute(select(Account).where(Account.api_key == api_key, Account.enabled.is_(True)))
+    account = result.scalar_one_or_none()
+
+    if account:
+        logger.info(f"Account API key validated for account {account.id} ({account.name})")
+        return account
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Invalid API key",
     )
-    token_user = result.first()
-
-    if not token_user:
-        logger.warning(f"Invalid API token provided: {api_key[:10]}...")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API token"
-        )
-
-    _token_obj, user_obj = token_user
-    return user_obj

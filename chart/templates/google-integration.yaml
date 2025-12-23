@@ -55,19 +55,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "vomeet.fullname" . }}-db-credentials
                   key: password
-            - name: GOOGLE_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "vomeet.fullname" . }}-google-oauth
-                  key: client-id
-            - name: GOOGLE_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "vomeet.fullname" . }}-google-oauth
-                  key: client-secret
-            - name: GOOGLE_REDIRECT_URI
-              value: {{ $config.redirectUri | default "https://vomeet.io/google/callback" }}
-            {{- range $key, $value := $config.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}

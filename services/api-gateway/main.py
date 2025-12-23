@@ -16,8 +16,7 @@ import httpx
 import os
 from dotenv import load_dotenv
 import json  # For request body processing
-from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 import asyncio
 import redis.asyncio as aioredis
 from datetime import datetime, timezone
@@ -29,12 +28,6 @@ from shared_models.schemas import (
     MeetingListResponse,
     MeetingDataUpdate,  # Updated/Added Schemas
     TranscriptionResponse,
-    TranscriptionSegment,
-    UserCreate,
-    UserResponse,
-    TokenResponse,
-    UserDetailResponse,  # Admin Schemas
-    ErrorResponse,
     Platform,  # Import Platform enum for path parameters
     BotStatusResponse,  # ADDED: Import response model for documentation
     WebhookCreate,
@@ -414,14 +407,15 @@ async def delete_meeting_proxy(platform: Platform, native_meeting_id: str, reque
     return await forward_request(app.state.http_client, "DELETE", url, request)
 
 
-# --- User Profile Routes ---
+# --- DEPRECATED: User Profile Routes (use Account-based flows instead) ---
 @app.put(
     "/user/webhook",
-    tags=["User"],
-    summary="Set user webhook URL",
-    description="Sets a webhook URL for the authenticated user to receive notifications.",
+    tags=["User - Deprecated"],
+    summary="[DEPRECATED] Set user webhook URL",
+    description="DEPRECATED: Use Account-based webhook configuration instead. Sets a webhook URL for the authenticated user.",
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(api_key_scheme)],
+    deprecated=True,
 )
 async def set_user_webhook_proxy(request: Request):
     """Forward request to Admin API to set user webhook."""

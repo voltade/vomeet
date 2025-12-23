@@ -1,38 +1,49 @@
 """
 Google Calendar Integration Microservice for Vomeet.
 
-Enables users to connect their Google Calendar and auto-join Google Meet meetings.
+Enables account users to connect their Google Calendar and auto-join Google Meet meetings.
+
+B2B Account API: X-API-Key header with account api_key + external_user_id
 
 Scopes used:
 - https://www.googleapis.com/auth/calendar.events.readonly - Read calendar events
-- email - Get user's email identity
-- profile - Get user's name and profile picture
+- https://www.googleapis.com/auth/userinfo.email - Get user's email identity
 """
 
 import os
 import re
+import json
+import hmac
+import hashlib
+import secrets
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from urllib.parse import urlencode
+import base64
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared_models.database import get_db
-from shared_models.models import User, GoogleIntegration, APIToken
+from shared_models.models import (
+    Account,
+    AccountUser,
+    AccountUserGoogleIntegration,
+)
 from shared_models.schemas import (
-    GoogleAuthUrlResponse,
-    GoogleCallbackRequest,
-    GoogleIntegrationResponse,
-    GoogleIntegrationUpdate,
     CalendarEvent,
     CalendarEventAttendee,
     CalendarEventsResponse,
+    AccountCalendarAuthTokenRequest,
+    AccountCalendarAuthTokenResponse,
+    AccountUserGoogleIntegrationResponse,
+    GoogleIntegrationUpdate,
 )
 
 # Configure logging
@@ -41,8 +52,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Vomeet Google Integration",
-    description="Google Calendar integration for auto-joining Google Meet meetings",
-    version="1.0.0",
+    description="Google Calendar integration for auto-joining Google Meet meetings (B2B Account API)",
+    version="2.0.0",
 )
 
 # Add CORS middleware
@@ -54,30 +65,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Google OAuth configuration
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "https://vomeet.io/google/callback")
+# State signing key - should be set in production
+STATE_SECRET_KEY = os.getenv("STATE_SECRET_KEY", secrets.token_hex(32))
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3"
 
-# OAuth scopes
+# OAuth scopes - matching Google's required format
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/calendar.events.readonly",
-    "email",
-    "profile",
-    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
 ]
+
+# State token expiry (10 minutes)
+STATE_EXPIRY_SECONDS = 600
+
+
+def create_calendar_auth_token(account_user_id: int) -> str:
+    """
+    Create a signed calendar auth token for an account user.
+    This token is included in the OAuth state and used to identify the user on callback.
+    Format: base64(account_user_id:timestamp:signature)
+    """
+    timestamp = int(datetime.now(timezone.utc).timestamp())
+    payload = f"au:{account_user_id}:{timestamp}"  # "au:" prefix for account user
+    signature = hmac.new(STATE_SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+    token_data = f"{payload}:{signature}"
+    return base64.urlsafe_b64encode(token_data.encode()).decode()
+
+
+def verify_calendar_auth_token(token: str) -> Optional[int]:
+    """
+    Verify calendar auth token and return account_user_id if valid.
+    Returns None if invalid or expired.
+    """
+    try:
+        token_data = base64.urlsafe_b64decode(token.encode()).decode()
+        parts = token_data.split(":")
+        if len(parts) != 4 or parts[0] != "au":
+            return None
+
+        _, account_user_id_str, timestamp_str, signature = parts
+        account_user_id = int(account_user_id_str)
+        timestamp = int(timestamp_str)
+
+        # Verify signature
+        payload = f"au:{account_user_id}:{timestamp}"
+        expected_signature = hmac.new(STATE_SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+
+        if not hmac.compare_digest(signature, expected_signature):
+            logger.warning("Calendar auth token signature mismatch")
+            return None
+
+        # Check expiry
+        now = int(datetime.now(timezone.utc).timestamp())
+        if now - timestamp > STATE_EXPIRY_SECONDS:
+            logger.warning("Calendar auth token expired")
+            return None
+
+        return account_user_id
+    except Exception as e:
+        logger.warning(f"Failed to verify calendar auth token: {e}")
+        return None
 
 
 def extract_meet_code(text: Optional[str]) -> Optional[str]:
     """Extract Google Meet code (xxx-yyyy-zzz) from text."""
     if not text:
         return None
-    # Match patterns like meet.google.com/xxx-yyyy-zzz
     pattern = r"meet\.google\.com/([a-z]{3}-[a-z]{4}-[a-z]{3})"
     match = re.search(pattern, text.lower())
     if match:
@@ -85,8 +142,8 @@ def extract_meet_code(text: Optional[str]) -> Optional[str]:
     return None
 
 
-async def get_current_user_from_api_key(request: Request, db: AsyncSession) -> User:
-    """Get current user from X-API-Key header."""
+async def get_account_from_api_key(request: Request, db: AsyncSession) -> Account:
+    """Get account from X-API-Key header."""
     api_key = request.headers.get("X-API-Key")
     if not api_key:
         raise HTTPException(
@@ -94,27 +151,57 @@ async def get_current_user_from_api_key(request: Request, db: AsyncSession) -> U
             detail="X-API-Key header required",
         )
 
-    stmt = select(APIToken).where(APIToken.token == api_key)
+    stmt = select(Account).where(Account.api_key == api_key, Account.enabled.is_(True))
     result = await db.execute(stmt)
-    token = result.scalar_one_or_none()
+    account = result.scalar_one_or_none()
 
-    if not token:
+    if not account:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
 
-    user = await db.get(User, token.user_id)
-    if not user:
+    return account
+
+
+async def get_or_create_account_user(account: Account, external_user_id: str, db: AsyncSession) -> AccountUser:
+    """Get or create an account user by external_user_id."""
+    stmt = select(AccountUser).where(
+        AccountUser.account_id == account.id,
+        AccountUser.external_user_id == external_user_id,
+    )
+    result = await db.execute(stmt)
+    account_user = result.scalar_one_or_none()
+
+    if not account_user:
+        account_user = AccountUser(
+            account_id=account.id,
+            external_user_id=external_user_id,
+        )
+        db.add(account_user)
+        await db.commit()
+        await db.refresh(account_user)
+        logger.info(f"Created account user {account_user.id} for account {account.id}")
+
+    return account_user
+
+
+def get_google_credentials(account: Account) -> tuple[str, str]:
+    """Get Google OAuth credentials from account. Account must have their own credentials configured."""
+    if not account.google_client_id or not account.google_client_secret:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth not configured for this account",
         )
 
-    return user
+    return account.google_client_id, account.google_client_secret
 
 
-async def refresh_access_token(integration: GoogleIntegration, db: AsyncSession) -> str:
+async def refresh_account_user_token(
+    integration: AccountUserGoogleIntegration,
+    account: Account,
+    db: AsyncSession,
+) -> str:
     """Refresh the access token using the refresh token."""
     if not integration.refresh_token:
         raise HTTPException(
@@ -122,12 +209,14 @@ async def refresh_access_token(integration: GoogleIntegration, db: AsyncSession)
             detail="No refresh token available. Please reconnect Google account.",
         )
 
+    client_id, client_secret = get_google_credentials(account)
+
     async with httpx.AsyncClient() as client:
         response = await client.post(
             GOOGLE_TOKEN_URL,
             data={
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "refresh_token": integration.refresh_token,
                 "grant_type": "refresh_token",
             },
@@ -151,14 +240,18 @@ async def refresh_access_token(integration: GoogleIntegration, db: AsyncSession)
         return integration.access_token
 
 
-async def get_valid_access_token(integration: GoogleIntegration, db: AsyncSession) -> str:
+async def get_valid_account_user_token(
+    integration: AccountUserGoogleIntegration,
+    account: Account,
+    db: AsyncSession,
+) -> str:
     """Get a valid access token, refreshing if necessary."""
     if integration.token_expires_at:
         expires_at = integration.token_expires_at
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at <= datetime.now(timezone.utc) + timedelta(minutes=5):
-            return await refresh_access_token(integration, db)
+            return await refresh_account_user_token(integration, account, db)
     return integration.access_token
 
 
@@ -169,81 +262,170 @@ async def healthz():
     return {"status": "ok"}
 
 
-# --- OAuth Endpoints ---
-@app.get("/auth", response_model=GoogleAuthUrlResponse, tags=["OAuth"])
-async def get_google_auth_url(
+# --- Calendar Auth Token (B2B) ---
+@app.post("/calendar/auth_token", response_model=AccountCalendarAuthTokenResponse, tags=["Calendar OAuth"])
+async def get_calendar_auth_token(
+    body: AccountCalendarAuthTokenRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get Google OAuth authorization URL.
+    **Step 1: Get Calendar Auth Token**
 
-    Redirect the user to this URL to initiate Google sign-in and calendar access.
-    """
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google OAuth not configured",
-        )
+    Get a calendar auth token for one of your users. This token is used in the
+    OAuth state parameter when building the Google OAuth URL.
 
-    user = await get_current_user_from_api_key(request, db)
-
-    # Use user_id as state for CSRF protection
-    state = str(user.id)
-
-    params = {
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
-        "response_type": "code",
-        "scope": " ".join(GOOGLE_SCOPES),
-        "access_type": "offline",
-        "prompt": "consent",
-        "state": state,
+    **Request Body:**
+    ```json
+    {
+        "external_user_id": "your-app-user-id-123"
     }
+    ```
 
-    auth_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+    **Response:**
+    ```json
+    {
+        "calendar_auth_token": "...",
+        "account_user_id": 456,
+        "expires_in": 600
+    }
+    ```
+    """
+    account = await get_account_from_api_key(request, db)
+    account_user = await get_or_create_account_user(account, body.external_user_id, db)
+    token = create_calendar_auth_token(account_user.id)
 
-    return GoogleAuthUrlResponse(auth_url=auth_url)
+    return AccountCalendarAuthTokenResponse(
+        calendar_auth_token=token,
+        account_user_id=account_user.id,
+        expires_in=STATE_EXPIRY_SECONDS,
+    )
 
 
-@app.post("/callback", response_model=GoogleIntegrationResponse, tags=["OAuth"])
-async def google_oauth_callback(
-    callback: GoogleCallbackRequest,
+# --- Calendar OAuth Callback ---
+@app.get("/calendar/google_oauth_callback", tags=["Calendar OAuth"])
+async def google_calendar_oauth_callback(
     request: Request,
+    code: Optional[str] = Query(None, description="Authorization code from Google"),
+    state: Optional[str] = Query(None, description="JSON state containing auth token and redirect URLs"),
+    error: Optional[str] = Query(None, description="Error from Google OAuth"),
+    error_description: Optional[str] = Query(None, description="Error description"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Handle Google OAuth callback.
+    **Step 3: Handle Google OAuth Callback**
 
-    Exchange the authorization code for access tokens and store the integration.
+    This endpoint receives the forwarded OAuth callback from your application.
+
+    **Flow:**
+    1. Google redirects to YOUR redirect_uri with code and state
+    2. Your server forwards the request to this endpoint (preserving all query params)
+    3. Vomeet exchanges the code, stores tokens, and redirects to success_url or error_url
+
+    **State Parameter Format (JSON):**
+    ```json
+    {
+        "vomeet_calendar_auth_token": "token_from_step_1",
+        "google_oauth_redirect_uri": "https://your-domain.com/oauth/callback",
+        "success_url": "https://your-domain.com/calendar/success",
+        "error_url": "https://your-domain.com/calendar/error"
+    }
+    ```
+
+    **Success Redirect:**
+    Redirects to `success_url` with query params:
+    - `email`: Connected Google account email
+    - `name`: User's name (if available)
+    - `account_user_id`: Internal Vomeet account user ID
+
+    **Error Redirect:**
+    Redirects to `error_url` with query params:
+    - `error`: Error code
+    - `error_description`: Human-readable error message
     """
-    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google OAuth not configured",
+
+    def redirect_error(error_url: Optional[str], error_code: str, description: str):
+        """Helper to redirect to error URL or return JSON error."""
+        if error_url:
+            params = urlencode({"error": error_code, "error_description": description})
+            return RedirectResponse(url=f"{error_url}?{params}")
+        raise HTTPException(status_code=400, detail=description)
+
+    # Parse state
+    state_data = {}
+    error_url = None
+    success_url = None
+    redirect_uri = None
+
+    if state:
+        try:
+            state_data = json.loads(state)
+            error_url = state_data.get("error_url")
+            success_url = state_data.get("success_url")
+            redirect_uri = state_data.get("google_oauth_redirect_uri")
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse state JSON: {state}")
+            raise HTTPException(status_code=400, detail="Invalid state parameter format")
+
+    # Handle Google OAuth errors
+    if error:
+        error_msg = error_description or error
+        if error == "access_denied":
+            error_msg = "Access denied. Please grant calendar permissions to continue."
+        logger.warning(f"Google OAuth error: {error} - {error_description}")
+        return redirect_error(error_url, error, error_msg)
+
+    if not code:
+        return redirect_error(error_url, "missing_code", "No authorization code received")
+
+    if not state:
+        return redirect_error(error_url, "missing_state", "Missing state parameter")
+
+    # Verify auth token and get account_user_id
+    auth_token = state_data.get("vomeet_calendar_auth_token")
+    if not auth_token:
+        return redirect_error(error_url, "missing_token", "Missing vomeet_calendar_auth_token in state")
+
+    account_user_id = verify_calendar_auth_token(auth_token)
+    if not account_user_id:
+        return redirect_error(
+            error_url, "invalid_token", "Invalid or expired auth token. Please restart the connection flow."
         )
 
-    user = await get_current_user_from_api_key(request, db)
+    # Get account user and account
+    account_user = await db.get(AccountUser, account_user_id)
+    if not account_user:
+        return redirect_error(error_url, "user_not_found", "Account user not found")
+
+    account = await db.get(Account, account_user.account_id)
+    if not account or not account.enabled:
+        return redirect_error(error_url, "account_disabled", "Account not found or disabled")
+
+    if not redirect_uri:
+        return redirect_error(error_url, "missing_redirect_uri", "Missing google_oauth_redirect_uri in state")
+
+    # Get Google credentials (account's own or Vomeet's default)
+    try:
+        client_id, client_secret = get_google_credentials(account)
+    except HTTPException as e:
+        return redirect_error(error_url, "not_configured", e.detail)
 
     # Exchange code for tokens
     async with httpx.AsyncClient() as client:
         token_response = await client.post(
             GOOGLE_TOKEN_URL,
             data={
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "code": callback.code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": code,
                 "grant_type": "authorization_code",
-                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "redirect_uri": redirect_uri,
             },
         )
 
         if token_response.status_code != 200:
             logger.error(f"Token exchange failed: {token_response.text}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange authorization code",
-            )
+            return redirect_error(error_url, "token_exchange_failed", "Failed to exchange authorization code")
 
         token_data = token_response.json()
 
@@ -255,15 +437,12 @@ async def google_oauth_callback(
 
         if userinfo_response.status_code != 200:
             logger.error(f"Failed to get userinfo: {userinfo_response.text}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to get Google user info",
-            )
+            return redirect_error(error_url, "userinfo_failed", "Failed to get Google user info")
 
         userinfo = userinfo_response.json()
 
     # Check if integration already exists
-    stmt = select(GoogleIntegration).where(GoogleIntegration.user_id == user.id)
+    stmt = select(AccountUserGoogleIntegration).where(AccountUserGoogleIntegration.account_user_id == account_user.id)
     result = await db.execute(stmt)
     integration = result.scalar_one_or_none()
 
@@ -284,8 +463,8 @@ async def google_oauth_callback(
         integration.scopes = GOOGLE_SCOPES
     else:
         # Create new integration
-        integration = GoogleIntegration(
-            user_id=user.id,
+        integration = AccountUserGoogleIntegration(
+            account_user_id=account_user.id,
             google_user_id=userinfo["id"],
             email=userinfo.get("email", ""),
             name=userinfo.get("name"),
@@ -298,57 +477,136 @@ async def google_oauth_callback(
         )
         db.add(integration)
 
+    # Update account user with email/name if not set
+    if not account_user.email and userinfo.get("email"):
+        account_user.email = userinfo.get("email")
+    if not account_user.name and userinfo.get("name"):
+        account_user.name = userinfo.get("name")
+
     await db.commit()
     await db.refresh(integration)
 
-    return GoogleIntegrationResponse.model_validate(integration)
+    logger.info(f"Google Calendar connected for account_user {account_user.id}: {integration.email}")
+
+    # Redirect to success URL
+    if success_url:
+        params = urlencode(
+            {
+                "email": integration.email,
+                "name": integration.name or "",
+                "account_user_id": str(account_user.id),
+            }
+        )
+        return RedirectResponse(url=f"{success_url}?{params}")
+
+    # If no success_url, return JSON response
+    return {
+        "success": True,
+        "email": integration.email,
+        "name": integration.name,
+        "account_user_id": account_user.id,
+    }
 
 
 # --- Integration Status Endpoints ---
-@app.get("/status", response_model=Optional[GoogleIntegrationResponse], tags=["Integration"])
-async def get_google_integration_status(
+@app.get(
+    "/users/{external_user_id}/status",
+    response_model=Optional[AccountUserGoogleIntegrationResponse],
+    tags=["Integration"],
+)
+async def get_user_google_integration_status(
+    external_user_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get the current user's Google integration status.
+    Get a user's Google integration status.
 
     Returns the integration details or null if not connected.
     """
-    user = await get_current_user_from_api_key(request, db)
+    account = await get_account_from_api_key(request, db)
 
-    stmt = select(GoogleIntegration).where(GoogleIntegration.user_id == user.id)
+    stmt = select(AccountUser).where(
+        AccountUser.account_id == account.id,
+        AccountUser.external_user_id == external_user_id,
+    )
+    result = await db.execute(stmt)
+    account_user = result.scalar_one_or_none()
+
+    if not account_user:
+        return None
+
+    stmt = select(AccountUserGoogleIntegration).where(AccountUserGoogleIntegration.account_user_id == account_user.id)
     result = await db.execute(stmt)
     integration = result.scalar_one_or_none()
 
     if not integration:
         return None
 
-    return GoogleIntegrationResponse.model_validate(integration)
+    return AccountUserGoogleIntegrationResponse.model_validate(integration)
 
 
-@app.put("/settings", response_model=GoogleIntegrationResponse, tags=["Integration"])
-async def update_google_integration_settings(
+@app.get("/users/{external_user_id}/settings", response_model=GoogleIntegrationUpdate, tags=["Integration"])
+async def get_user_google_integration_settings(
+    external_user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get a user's Google integration settings.
+    """
+    account = await get_account_from_api_key(request, db)
+
+    stmt = select(AccountUser).where(
+        AccountUser.account_id == account.id,
+        AccountUser.external_user_id == external_user_id,
+    )
+    result = await db.execute(stmt)
+    account_user = result.scalar_one_or_none()
+
+    if not account_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stmt = select(AccountUserGoogleIntegration).where(AccountUserGoogleIntegration.account_user_id == account_user.id)
+    result = await db.execute(stmt)
+    integration = result.scalar_one_or_none()
+
+    if not integration:
+        raise HTTPException(status_code=404, detail="Google integration not found. Please connect first.")
+
+    return GoogleIntegrationUpdate(auto_join_enabled=integration.auto_join_enabled)
+
+
+@app.put(
+    "/users/{external_user_id}/settings", response_model=AccountUserGoogleIntegrationResponse, tags=["Integration"]
+)
+async def update_user_google_integration_settings(
+    external_user_id: str,
     update: GoogleIntegrationUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Update Google integration settings.
-
-    Currently supports enabling/disabling auto-join for meetings.
+    Update a user's Google integration settings.
     """
-    user = await get_current_user_from_api_key(request, db)
+    account = await get_account_from_api_key(request, db)
 
-    stmt = select(GoogleIntegration).where(GoogleIntegration.user_id == user.id)
+    stmt = select(AccountUser).where(
+        AccountUser.account_id == account.id,
+        AccountUser.external_user_id == external_user_id,
+    )
+    result = await db.execute(stmt)
+    account_user = result.scalar_one_or_none()
+
+    if not account_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stmt = select(AccountUserGoogleIntegration).where(AccountUserGoogleIntegration.account_user_id == account_user.id)
     result = await db.execute(stmt)
     integration = result.scalar_one_or_none()
 
     if not integration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Google integration not found. Please connect first.",
-        )
+        raise HTTPException(status_code=404, detail="Google integration not found. Please connect first.")
 
     if update.auto_join_enabled is not None:
         integration.auto_join_enabled = update.auto_join_enabled
@@ -356,30 +614,36 @@ async def update_google_integration_settings(
     await db.commit()
     await db.refresh(integration)
 
-    return GoogleIntegrationResponse.model_validate(integration)
+    return AccountUserGoogleIntegrationResponse.model_validate(integration)
 
 
-@app.delete("/disconnect", tags=["Integration"])
-async def disconnect_google_integration(
+@app.delete("/users/{external_user_id}/disconnect", tags=["Integration"])
+async def disconnect_user_google_integration(
+    external_user_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Disconnect Google integration.
-
-    Removes the stored tokens and disables auto-join.
+    Disconnect a user's Google integration.
     """
-    user = await get_current_user_from_api_key(request, db)
+    account = await get_account_from_api_key(request, db)
 
-    stmt = select(GoogleIntegration).where(GoogleIntegration.user_id == user.id)
+    stmt = select(AccountUser).where(
+        AccountUser.account_id == account.id,
+        AccountUser.external_user_id == external_user_id,
+    )
+    result = await db.execute(stmt)
+    account_user = result.scalar_one_or_none()
+
+    if not account_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stmt = select(AccountUserGoogleIntegration).where(AccountUserGoogleIntegration.account_user_id == account_user.id)
     result = await db.execute(stmt)
     integration = result.scalar_one_or_none()
 
     if not integration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Google integration not found",
-        )
+        raise HTTPException(status_code=404, detail="Google integration not found")
 
     await db.delete(integration)
     await db.commit()
@@ -388,8 +652,9 @@ async def disconnect_google_integration(
 
 
 # --- Calendar Endpoints ---
-@app.get("/calendar/events", response_model=CalendarEventsResponse, tags=["Calendar"])
-async def get_calendar_events(
+@app.get("/users/{external_user_id}/calendar/events", response_model=CalendarEventsResponse, tags=["Calendar"])
+async def get_user_calendar_events(
+    external_user_id: str,
     request: Request,
     time_min: Optional[datetime] = None,
     time_max: Optional[datetime] = None,
@@ -398,28 +663,33 @@ async def get_calendar_events(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get upcoming calendar events with Google Meet links.
-
-    Returns events from the user's primary calendar.
+    Get upcoming calendar events for a user.
 
     - **time_min**: Start time for events (defaults to now)
     - **time_max**: End time for events (defaults to 7 days from now)
     - **max_results**: Maximum number of events to return (default: 50, max: 250)
     - **page_token**: Token for pagination
     """
-    user = await get_current_user_from_api_key(request, db)
+    account = await get_account_from_api_key(request, db)
 
-    stmt = select(GoogleIntegration).where(GoogleIntegration.user_id == user.id)
+    stmt = select(AccountUser).where(
+        AccountUser.account_id == account.id,
+        AccountUser.external_user_id == external_user_id,
+    )
+    result = await db.execute(stmt)
+    account_user = result.scalar_one_or_none()
+
+    if not account_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stmt = select(AccountUserGoogleIntegration).where(AccountUserGoogleIntegration.account_user_id == account_user.id)
     result = await db.execute(stmt)
     integration = result.scalar_one_or_none()
 
     if not integration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Google integration not found. Please connect first.",
-        )
+        raise HTTPException(status_code=404, detail="Google integration not found. Please connect first.")
 
-    access_token = await get_valid_access_token(integration, db)
+    access_token = await get_valid_account_user_token(integration, account, db)
 
     # Set default time range
     if not time_min:
@@ -451,8 +721,7 @@ async def get_calendar_events(
         )
 
         if response.status_code == 401:
-            # Token might be expired, try to refresh
-            access_token = await refresh_access_token(integration, db)
+            access_token = await refresh_account_user_token(integration, account, db)
             response = await client.get(
                 f"{GOOGLE_CALENDAR_API}/calendars/primary/events",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -461,24 +730,18 @@ async def get_calendar_events(
 
         if response.status_code != 200:
             logger.error(f"Failed to fetch calendar events: {response.text}")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to fetch calendar events from Google",
-            )
+            raise HTTPException(status_code=502, detail="Failed to fetch calendar events from Google")
 
         data = response.json()
 
     events = []
     for item in data.get("items", []):
-        # Skip cancelled events
         if item.get("status") == "cancelled":
             continue
 
-        # Extract Google Meet link from various locations
         meet_link = None
         native_meeting_id = None
 
-        # Check conferenceData for Google Meet
         conference_data = item.get("conferenceData", {})
         for entry_point in conference_data.get("entryPoints", []):
             if entry_point.get("entryPointType") == "video":
@@ -488,7 +751,6 @@ async def get_calendar_events(
                     native_meeting_id = extract_meet_code(uri)
                     break
 
-        # Also check location and description for Meet links
         if not meet_link:
             meet_link_from_location = extract_meet_code(item.get("location", ""))
             meet_link_from_desc = extract_meet_code(item.get("description", ""))
@@ -499,17 +761,14 @@ async def get_calendar_events(
                 native_meeting_id = meet_link_from_desc
                 meet_link = f"https://meet.google.com/{meet_link_from_desc}"
 
-        # Parse start/end times
         start = item.get("start", {})
         end = item.get("end", {})
-
         start_time = start.get("dateTime") or start.get("date")
         end_time = end.get("dateTime") or end.get("date")
 
         if not start_time:
             continue
 
-        # Parse datetime strings
         try:
             if "T" in start_time:
                 start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
@@ -527,7 +786,6 @@ async def get_calendar_events(
             logger.warning(f"Failed to parse event time: {e}")
             continue
 
-        # Parse attendees
         attendees = []
         for attendee in item.get("attendees", []):
             attendees.append(
@@ -564,34 +822,20 @@ async def get_calendar_events(
     )
 
 
-@app.get("/calendar/upcoming-meets", response_model=CalendarEventsResponse, tags=["Calendar"])
-async def get_upcoming_google_meets(
+@app.get("/users/{external_user_id}/calendar/upcoming-meets", response_model=CalendarEventsResponse, tags=["Calendar"])
+async def get_user_upcoming_google_meets(
+    external_user_id: str,
     request: Request,
     hours: int = 24,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get upcoming Google Meet meetings only.
-
-    Filters calendar events to show only those with Google Meet links
-    in the next specified hours.
+    Get upcoming Google Meet meetings for a user.
 
     - **hours**: Number of hours to look ahead (default: 24)
     """
-    user = await get_current_user_from_api_key(request, db)
-
-    stmt = select(GoogleIntegration).where(GoogleIntegration.user_id == user.id)
-    result = await db.execute(stmt)
-    integration = result.scalar_one_or_none()
-
-    if not integration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Google integration not found. Please connect first.",
-        )
-
-    # Get all events and filter for those with Meet links
-    all_events_response = await get_calendar_events(
+    all_events = await get_user_calendar_events(
+        external_user_id=external_user_id,
         request=request,
         time_min=datetime.now(timezone.utc),
         time_max=datetime.now(timezone.utc) + timedelta(hours=hours),
@@ -599,8 +843,7 @@ async def get_upcoming_google_meets(
         db=db,
     )
 
-    # Filter to only events with Google Meet links
-    meet_events = [e for e in all_events_response.events if e.google_meet_link]
+    meet_events = [e for e in all_events.events if e.google_meet_link]
 
     return CalendarEventsResponse(
         events=meet_events,

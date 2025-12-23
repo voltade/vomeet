@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # from pydantic import ValidationError # Not explicitly used in the snippets for these functions, but could be for WhisperLiveData
 
 from shared_models.database import async_session_local  # For DB sessions
-from shared_models.models import User, Meeting, MeetingSession, APIToken
+from shared_models.models import Meeting, MeetingSession
 from shared_models.schemas import (
     Platform,
 )  # WhisperLiveData not directly used by these functions from snippet
@@ -62,9 +62,7 @@ def verify_meeting_token(token: str) -> Optional[dict]:
         if header.get("alg") != "HS256" or header.get("typ") != "JWT":
             return None
         signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
-        expected_sig = hmac.new(
-            secret.encode("utf-8"), signing_input, digestmod="sha256"
-        ).digest()
+        expected_sig = hmac.new(secret.encode("utf-8"), signing_input, digestmod="sha256").digest()
         expected_b64 = _b64url_encode(expected_sig)
         if not hmac.compare_digest(expected_b64, signature_b64):
             return None
@@ -72,10 +70,7 @@ def verify_meeting_token(token: str) -> Optional[dict]:
         now = int(datetime.now(timezone.utc).timestamp())
         if "exp" in payload and int(payload["exp"]) < now:
             return None
-        if (
-            payload.get("aud") != "transcription-collector"
-            or payload.get("iss") != "bot-manager"
-        ):
+        if payload.get("aud") != "transcription-collector" or payload.get("iss") != "bot-manager":
             return None
         if payload.get("scope") != "transcribe:write":
             return None
@@ -91,7 +86,6 @@ async def process_session_start_event(
     message_id: str,
     stream_data: Dict[str, Any],
     db: AsyncSession,
-    user: Optional[User],
     meeting: Meeting,
     redis_c: aioredis.Redis,
 ) -> bool:
@@ -99,7 +93,6 @@ async def process_session_start_event(
 
     Updates the MeetingSession database record with the accurate start time.
     Caches session start time in Redis for fast absolute timestamp computation.
-    Uses pre-fetched user and meeting objects.
 
     Returns True if processing is considered complete (can be ACKed),
     False if a potentially recoverable error occurred (should not be ACKed).
@@ -118,9 +111,7 @@ async def process_session_start_event(
         try:
             if start_timestamp_str.endswith("Z"):
                 start_timestamp_str = start_timestamp_str[:-1]
-            start_timestamp = datetime.fromisoformat(start_timestamp_str).replace(
-                tzinfo=timezone.utc
-            )
+            start_timestamp = datetime.fromisoformat(start_timestamp_str).replace(tzinfo=timezone.utc)
         except ValueError as e:
             logger.warning(
                 f"Invalid timestamp format in session_start message {message_id}: {e}. Data: {start_timestamp_str}"
@@ -157,20 +148,12 @@ async def process_session_start_event(
         # 4. Cache session start time in Redis for fast lookup during transcription
         try:
             session_start_cache_key = f"meeting_session:{session_uid}:start"
-            await redis_c.set(
-                session_start_cache_key, start_timestamp.isoformat(), ex=7200
-            )  # 2 hour TTL
-            logger.info(
-                f"Cached session start time in Redis: {session_start_cache_key}"
-            )
+            await redis_c.set(session_start_cache_key, start_timestamp.isoformat(), ex=7200)  # 2 hour TTL
+            logger.info(f"Cached session start time in Redis: {session_start_cache_key}")
         except Exception as redis_err:
-            logger.warning(
-                f"Failed to cache session start time in Redis for session {session_uid}: {redis_err}"
-            )
+            logger.warning(f"Failed to cache session start time in Redis for session {session_uid}: {redis_err}")
 
-        logger.info(
-            f"Successfully processed session_start event for meeting {meeting.id}, session {session_uid}"
-        )
+        logger.info(f"Successfully processed session_start event for meeting {meeting.id}, session {session_uid}")
         return True
 
     except Exception as e:
@@ -188,9 +171,7 @@ async def process_session_start_event(
         return False  # Unexpected error, DO NOT ACK
 
 
-async def process_stream_message(
-    message_id: str, message_data: Dict[str, Any], redis_c: aioredis.Redis
-) -> bool:
+async def process_stream_message(message_id: str, message_data: Dict[str, Any], redis_c: aioredis.Redis) -> bool:
     """Processes a single message payload from the Redis stream.
     Returns True if processing is considered complete (can be ACKed),
     False if a potentially recoverable error occurred (should not be ACKed).
@@ -205,7 +186,6 @@ async def process_stream_message(
         stream_data = json.loads(payload_json)
         message_type = stream_data.get("type", "transcription")
 
-        user: Optional[User] = None
         meeting: Optional[Meeting] = None
         internal_meeting_id: Optional[int] = None
 
@@ -222,62 +202,42 @@ async def process_stream_message(
 
                 internal_meeting_id = int(claims.get("meeting_id"))
                 platform_val = claims.get("platform") or stream_data.get("platform")
-                native_meeting_id = claims.get("native_meeting_id") or stream_data.get(
-                    "meeting_id"
-                )
+                native_meeting_id = claims.get("native_meeting_id") or stream_data.get("meeting_id")
 
                 # Process different message types
                 if message_type == "session_start":
                     # Fetch meeting by id for session creation (rare path; acceptable DB hit)
                     meeting = await db.get(Meeting, internal_meeting_id)
                     if not meeting:
-                        logger.warning(
-                            f"Session start for unknown meeting_id {internal_meeting_id}. Skipping."
-                        )
+                        logger.warning(f"Session start for unknown meeting_id {internal_meeting_id}. Skipping.")
                         return True
-                    return await process_session_start_event(
-                        message_id, stream_data, db, None, meeting, redis_c
-                    )
+                    return await process_session_start_event(message_id, stream_data, db, meeting, redis_c)
                 elif message_type == "transcription":
                     pass  # Continue with transcription processing
-                elif (
-                    message_type == "session_end"
-                ):  # NEW: Handle session_end for cleanup
+                elif message_type == "session_end":  # NEW: Handle session_end for cleanup
                     session_uid = stream_data.get("uid")
                     if not session_uid:
-                        logger.warning(
-                            f"Message {message_id} (type: session_end) missing 'uid'. Skipping cleanup."
-                        )
+                        logger.warning(f"Message {message_id} (type: session_end) missing 'uid'. Skipping cleanup.")
                         return True  # Cannot process without UID, but ack
 
-                    speaker_event_key = (
-                        f"{REDIS_SPEAKER_EVENT_KEY_PREFIX}:{session_uid}"
-                    )
+                    speaker_event_key = f"{REDIS_SPEAKER_EVENT_KEY_PREFIX}:{session_uid}"
                     session_start_cache_key = f"meeting_session:{session_uid}:start"
                     try:
-                        deleted_count = await redis_c.delete(
-                            speaker_event_key, session_start_cache_key
-                        )
+                        deleted_count = await redis_c.delete(speaker_event_key, session_start_cache_key)
                         logger.info(
                             f"Processed session_end for UID '{session_uid}'. Deleted speaker events and session start cache from Redis (count: {deleted_count})."
                         )
                         # Note: MeetingSession.session_end_utc is not updated here due to no DB model changes allowed.
                     except redis.exceptions.RedisError as e_redis:
-                        logger.error(
-                            f"Redis error deleting keys for UID '{session_uid}' on session_end: {e_redis}"
-                        )
+                        logger.error(f"Redis error deleting keys for UID '{session_uid}' on session_end: {e_redis}")
                         return False  # Retryable Redis error
                     return True  # Successfully processed session_end
                 else:
-                    logger.warning(
-                        f"Message {message_id} has unknown type '{message_type}'. Skipping."
-                    )
+                    logger.warning(f"Message {message_id} has unknown type '{message_type}'. Skipping.")
                     return True
 
-            except ValueError as ve:  # Raised by get_user_by_token or other validation
-                logger.warning(
-                    f"Auth/Lookup or validation failed for message {message_id}: {ve}. Skipping."
-                )
+            except ValueError as ve:  # Raised by validation
+                logger.warning(f"Validation failed for message {message_id}: {ve}. Skipping.")
                 return True
             except Exception as db_err:
                 logger.error(
@@ -305,22 +265,14 @@ async def process_stream_message(
             try:
                 if session_uid_from_payload:
                     # Try Redis cache first for fast lookup
-                    session_start_cache_key = (
-                        f"meeting_session:{session_uid_from_payload}:start"
-                    )
+                    session_start_cache_key = f"meeting_session:{session_uid_from_payload}:start"
                     cached_start = await redis_c.get(session_start_cache_key)
                     if cached_start:
                         try:
-                            cached_str = (
-                                cached_start
-                                if isinstance(cached_start, str)
-                                else cached_start.decode("utf-8")
-                            )
+                            cached_str = cached_start if isinstance(cached_start, str) else cached_start.decode("utf-8")
                             if cached_str.endswith("Z"):
                                 cached_str = cached_str[:-1]
-                            session_start_utc = datetime.fromisoformat(
-                                cached_str
-                            ).replace(tzinfo=timezone.utc)
+                            session_start_utc = datetime.fromisoformat(cached_str).replace(tzinfo=timezone.utc)
                             logger.debug(
                                 f"[Msg {message_id}/Meet {internal_meeting_id}] Loaded session start from Redis cache for UID {session_uid_from_payload}"
                             )
@@ -337,9 +289,7 @@ async def process_stream_message(
                         )
                         result_session_time = await db.execute(stmt_session_time)
                         session_row = result_session_time.scalars().first()
-                        if session_row and getattr(
-                            session_row, "session_start_time", None
-                        ):
+                        if session_row and getattr(session_row, "session_start_time", None):
                             session_start_utc = session_row.session_start_time
                             # Cache it for next time
                             try:
@@ -364,11 +314,7 @@ async def process_stream_message(
                 )
 
             for i, segment in enumerate(stream_data.get("segments", [])):
-                if (
-                    not isinstance(segment, dict)
-                    or segment.get("start") is None
-                    or segment.get("end") is None
-                ):
+                if not isinstance(segment, dict) or segment.get("start") is None or segment.get("end") is None:
                     logger.warning(
                         f"[Msg {message_id}/Meet {internal_meeting_id}] Skipping segment {i} missing structure or 'start'/'end': {segment}"
                     )
@@ -430,12 +376,8 @@ async def process_stream_message(
                 abs_end_iso = None
                 if session_start_utc is not None:
                     try:
-                        abs_start_dt = session_start_utc + timedelta(
-                            seconds=start_time_float
-                        )
-                        abs_end_dt = session_start_utc + timedelta(
-                            seconds=end_time_float
-                        )
+                        abs_start_dt = session_start_utc + timedelta(seconds=start_time_float)
+                        abs_end_dt = session_start_utc + timedelta(seconds=end_time_float)
                         abs_start_iso = abs_start_dt.isoformat()
                         abs_end_iso = abs_end_dt.isoformat()
                     except Exception as _abs_err:
@@ -467,12 +409,8 @@ async def process_stream_message(
                             "text": existing_data.get("text"),
                             "speaker": existing_data.get("speaker"),
                             "language": existing_data.get("language"),
-                            "end_time": round(
-                                float(existing_data.get("end_time", 0)), 3
-                            ),
-                            "absolute_start_time": existing_data.get(
-                                "absolute_start_time"
-                            ),
+                            "end_time": round(float(existing_data.get("end_time", 0)), 3),
+                            "absolute_start_time": existing_data.get("absolute_start_time"),
                             "absolute_end_time": existing_data.get("absolute_end_time"),
                         }
                         new_norm = {
@@ -519,9 +457,7 @@ async def process_stream_message(
                         if segments_to_store:
                             pipe.hset(hash_key, mapping=segments_to_store)
                         results = await pipe.execute()
-                        if any(
-                            res is None for res in results
-                        ):  # Simplified critical failure check
+                        if any(res is None for res in results):  # Simplified critical failure check
                             logger.error(
                                 f"Redis pipeline command failed critically for message {message_id}. Results: {results}"
                             )
@@ -553,9 +489,7 @@ async def process_stream_message(
                         }
                         channel = f"tc:meeting:{internal_meeting_id}:mutable"
                         await redis_c.publish(channel, json.dumps(event_payload))
-                        logger.info(
-                            f"Published {len(changed_segments)} changed segments to {channel}"
-                        )
+                        logger.info(f"Published {len(changed_segments)} changed segments to {channel}")
                     except Exception as pub_err:
                         logger.error(
                             f"Failed to publish mutable transcript update for meeting {internal_meeting_id}: {pub_err}"
@@ -583,9 +517,7 @@ async def process_stream_message(
         return False
 
 
-async def process_speaker_event_message(
-    message_id: str, event_data: Dict[str, Any], redis_c: aioredis.Redis
-) -> bool:
+async def process_speaker_event_message(message_id: str, event_data: Dict[str, Any], redis_c: aioredis.Redis) -> bool:
     """Processes a single speaker event message from the Redis stream.
     Stores the event in a Redis Sorted Set keyed by session_uid.
     Returns True if processing is considered complete (can be ACKed),
@@ -633,9 +565,7 @@ async def process_speaker_event_message(
         )
         return True
 
-    except (
-        json.JSONDecodeError
-    ) as json_err:  # Should not happen if data is already dict
+    except json.JSONDecodeError as json_err:  # Should not happen if data is already dict
         logger.error(
             f"[SpeakerProcessor] Error serializing speaker event payload to JSON for message {message_id}: {json_err}. Data: {event_data}"
         )
