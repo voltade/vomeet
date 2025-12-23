@@ -44,16 +44,13 @@ spec:
             - name: DB_PORT
               value: {{ include "vomeet.databasePort" . | quote }}
             - name: DB_NAME
-              value: {{ .Values.global.database.name }}
+              value: {{ include "vomeet.databaseName" . }}
             - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "vomeet.fullname" . }}-db-credentials
-                  key: username
+              value: {{ include "vomeet.databaseUser" . }}
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "vomeet.fullname" . }}-db-credentials
+                  name: {{ include "vomeet.fullname" . }}-db
                   key: password
           livenessProbe:
             httpGet:
