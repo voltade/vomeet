@@ -154,7 +154,7 @@ jobs:
           
           # Wait for CNPG cluster to be ready
           echo "Waiting for CNPG cluster..."
-          kubectl wait --for=condition=Ready cluster/vomeet-cnpg -n ${{ env.NAMESPACE }} --timeout=120s || true
+          kubectl wait --for=condition=Ready clusters.postgresql.cnpg.io/vomeet-cnpg -n ${{ env.NAMESPACE }} --timeout=120s || true
           
           # Delete any previous migration job
           kubectl delete job db-migrate -n ${{ env.NAMESPACE }} --ignore-not-found=true
@@ -172,9 +172,19 @@ jobs:
             template:
               spec:
                 restartPolicy: Never
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                  seccompProfile:
+                    type: RuntimeDefault
                 containers:
                 - name: migrate
                   image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-transcription-collector:${TAG}
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    capabilities:
+                      drop:
+                        - ALL
                   command:
                   - sh
                   - -c
