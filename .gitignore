@@ -140,5 +140,7 @@ test_data/
 *.wav
 *.webm
 *.mp4
+# Ignore txt files except requirements.txt
 *.txt
-manifest.csvchart/charts/
+!requirements.txt
+!**/requirements.txt
