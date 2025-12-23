@@ -52,6 +52,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "vomeet.fullname" . }}-db
                   key: password
+            - name: STATE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: google-integration-secrets
+                  key: STATE_SECRET_KEY
           livenessProbe:
             httpGet:
               path: /healthz
