@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # --- Copy App Source ---
 # Copy the application source code
 COPY ./services/google-integration/main.py .
+COPY ./services/google-integration/scheduler.py .
+COPY ./services/google-integration/worker.py .
 
 # Expose the port the app runs on
 EXPOSE 8000
