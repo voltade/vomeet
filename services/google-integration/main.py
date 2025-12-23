@@ -234,7 +234,8 @@ async def refresh_account_user_token(
         if "refresh_token" in token_data:
             integration.refresh_token = token_data["refresh_token"]
         if "expires_in" in token_data:
-            integration.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])
+            # Strip timezone for naive TIMESTAMP column (stored as UTC)
+            integration.token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])).replace(tzinfo=None)
         await db.commit()
 
         return integration.access_token
@@ -448,7 +449,8 @@ async def google_calendar_oauth_callback(
 
     token_expires_at = None
     if "expires_in" in token_data:
-        token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])
+        # Strip timezone for naive TIMESTAMP column (stored as UTC)
+        token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])).replace(tzinfo=None)
 
     if integration:
         # Update existing integration
