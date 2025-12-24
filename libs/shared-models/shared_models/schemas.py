@@ -1123,6 +1123,8 @@ class WebhookEventType(str, Enum):
     BOT_FAILED = "bot.failed"
 
     # Meeting events
+    MEETING_CREATED = "meeting.created"
+    MEETING_UPDATED = "meeting.updated"
     MEETING_STATUS_CHANGE = "meeting.status_change"
 
     # Transcript events

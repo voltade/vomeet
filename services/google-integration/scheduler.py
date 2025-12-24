@@ -4,12 +4,16 @@ RQ Scheduler for auto-joining Google Meet meetings.
 This module contains:
 - Job functions for checking upcoming meetings and spawning bots
 - Scheduler setup using rq-scheduler
+- Webhook notifications for meeting.created events
 """
 
 import os
 import logging
+import hmac
+import hashlib
+import json
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import httpx
 from redis import Redis
@@ -75,6 +79,52 @@ def get_queue() -> Queue:
     """Get RQ queue for auto-join jobs."""
     conn = get_redis_connection()
     return Queue("auto_join", connection=conn)
+
+
+def compute_signature(payload: str, secret: str) -> str:
+    """Compute HMAC-SHA256 signature for webhook payload."""
+    return hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def send_webhook(
+    webhook_url: str,
+    webhook_secret: Optional[str],
+    event_type: str,
+    payload: Dict[str, Any],
+) -> bool:
+    """Send a webhook notification."""
+    try:
+        payload_json = json.dumps(payload, default=str)
+
+        headers = {
+            "Content-Type": "application/json",
+            "X-Vomeet-Event": event_type,
+            "X-Vomeet-Timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Add HMAC signature if secret is configured
+        if webhook_secret:
+            signature = compute_signature(payload_json, webhook_secret)
+            headers["X-Vomeet-Signature"] = f"sha256={signature}"
+
+        with httpx.Client() as client:
+            response = client.post(
+                webhook_url,
+                content=payload_json,
+                headers=headers,
+                timeout=30.0,
+            )
+
+            if 200 <= response.status_code < 300:
+                logger.info(f"Successfully sent {event_type} webhook to {webhook_url}")
+                return True
+            else:
+                logger.warning(f"{event_type} webhook to {webhook_url} returned status {response.status_code}")
+                return False
+
+    except httpx.RequestError as e:
+        logger.error(f"Failed to send {event_type} webhook to {webhook_url}: {e}")
+        return False
 
 
 def refresh_token_sync(
@@ -168,6 +218,18 @@ def get_upcoming_meets_sync(
         except ValueError:
             continue
 
+        # Extract attendees
+        attendees = []
+        for attendee in item.get("attendees", []):
+            attendee_info = {
+                "email": attendee.get("email"),
+                "name": attendee.get("displayName"),
+                "response_status": attendee.get("responseStatus"),  # needsAction, declined, tentative, accepted
+                "is_organizer": attendee.get("organizer", False),
+                "is_self": attendee.get("self", False),
+            }
+            attendees.append(attendee_info)
+
         events.append(
             {
                 "event_id": item["id"],
@@ -177,6 +239,7 @@ def get_upcoming_meets_sync(
                 "meet_link": meet_link,
                 "is_creator_self": item.get("creator", {}).get("self", False),
                 "is_organizer_self": item.get("organizer", {}).get("self", False),
+                "attendees": attendees,
             }
         )
 
@@ -188,8 +251,11 @@ def spawn_bot_sync(
     native_meeting_id: str,
     bot_name: str,
     event_summary: str,
-) -> bool:
-    """Synchronously call bot-manager to spawn a bot."""
+) -> Optional[Dict[str, Any]]:
+    """Synchronously call bot-manager to spawn a bot.
+
+    Returns the meeting data on success, None on failure.
+    """
     with httpx.Client() as client:
         response = client.post(
             f"{BOT_MANAGER_URL}/bots",
@@ -204,13 +270,13 @@ def spawn_bot_sync(
 
         if response.status_code == 201:
             logger.info(f"Successfully spawned bot for meeting '{event_summary}' ({native_meeting_id})")
-            return True
+            return response.json()
         elif response.status_code == 409:
             logger.info(f"Bot already exists for meeting '{event_summary}' ({native_meeting_id})")
-            return True  # Not an error, bot is already there
+            return {"already_exists": True}  # Not an error, bot is already there
         else:
             logger.error(f"Failed to spawn bot for '{event_summary}': {response.status_code} - {response.text}")
-            return False
+            return None
 
 
 def process_auto_join_for_user(
@@ -224,6 +290,8 @@ def process_auto_join_for_user(
     api_key: str,
     bot_name: str,
     auto_join_mode: str,
+    webhook_url: Optional[str] = None,
+    webhook_secret: Optional[str] = None,
 ):
     """
     Process auto-join for a single user.
@@ -272,7 +340,7 @@ def process_auto_join_for_user(
         )
 
         # Spawn the bot
-        success = spawn_bot_sync(
+        meeting_data = spawn_bot_sync(
             api_key=api_key,
             native_meeting_id=event["native_meeting_id"],
             bot_name=bot_name or "Notetaker",
@@ -280,8 +348,39 @@ def process_auto_join_for_user(
         )
 
         # Mark as attempted (expire after 2 hours to allow rejoining if meeting is rescheduled)
-        if success:
+        if meeting_data:
             redis_conn.setex(dedup_key, 7200, "1")  # 2 hour TTL
+
+            # Send meeting.created webhook if not already exists and webhook is configured
+            if webhook_url and not meeting_data.get("already_exists"):
+                webhook_payload = {
+                    "event": "meeting.created",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "meeting": {
+                        "id": meeting_data.get("id"),
+                        "bot_id": meeting_data.get("id"),  # bot_id is the meeting id
+                        "platform": "google_meet",
+                        "native_meeting_id": event["native_meeting_id"],
+                        "meeting_url": meeting_data.get("constructed_meeting_url"),
+                        "status": meeting_data.get("status"),
+                        "created_at": meeting_data.get("created_at"),
+                    },
+                    "calendar_event": {
+                        "event_id": event["event_id"],
+                        "title": event["summary"],
+                        "scheduled_at": event["start_time"].isoformat(),
+                        "is_creator_self": event.get("is_creator_self", False),
+                        "is_organizer_self": event.get("is_organizer_self", False),
+                        "attendees": event.get("attendees", []),
+                    },
+                    "user": {
+                        "external_user_id": external_user_id,
+                        "account_user_id": account_user_id,
+                        "account_id": account_id,
+                    },
+                }
+
+                send_webhook(webhook_url, webhook_secret, "meeting.created", webhook_payload)
 
 
 def check_and_enqueue_auto_joins():
@@ -321,7 +420,9 @@ def check_and_enqueue_auto_joins():
                     au.account_id,
                     a.api_key,
                     a.google_client_id,
-                    a.google_client_secret
+                    a.google_client_secret,
+                    a.webhook_url,
+                    a.webhook_secret
                 FROM account_user_google_integrations augi
                 JOIN account_users au ON au.id = augi.account_user_id
                 JOIN accounts a ON a.id = au.account_id
@@ -350,6 +451,8 @@ def check_and_enqueue_auto_joins():
                     api_key=user["api_key"],
                     bot_name=user["bot_name"],
                     auto_join_mode=user["auto_join_mode"],
+                    webhook_url=user["webhook_url"],
+                    webhook_secret=user["webhook_secret"],
                     job_timeout=120,  # 2 minute timeout per user
                 )
                 logger.debug(f"Enqueued auto-join job for account_user {user['account_user_id']}")
