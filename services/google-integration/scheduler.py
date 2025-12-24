@@ -181,10 +181,10 @@ def get_upcoming_meets_sync(
     events = []
     total_events = len(data.get("items", []))
     logger.info(f"Found {total_events} total calendar events in next {minutes_ahead} minutes")
-    
+
     for item in data.get("items", []):
         logger.debug(f"Processing event: {item.get('summary', 'Untitled')} (ID: {item.get('id')})")
-        
+
         if item.get("status") == "cancelled":
             logger.debug(f"Skipping cancelled event: {item.get('summary', 'Untitled')}")
             continue
@@ -263,7 +263,7 @@ def spawn_bot_sync(
     Returns the meeting data on success, None on failure.
     """
     logger.info(f"Spawning bot for meeting '{event_summary}' ({native_meeting_id}) with name '{bot_name}'")
-    
+
     with httpx.Client() as client:
         request_data = {
             "platform": "google_meet",
@@ -271,7 +271,7 @@ def spawn_bot_sync(
             "bot_name": bot_name,
         }
         logger.debug(f"Bot spawn request: {request_data}")
-        
+
         response = client.post(
             f"{BOT_MANAGER_URL}/bots",
             headers={"X-API-Key": api_key},
@@ -280,7 +280,7 @@ def spawn_bot_sync(
         )
 
         logger.info(f"Bot spawn response status: {response.status_code}")
-        
+
         if response.status_code == 201:
             logger.info(f"Successfully spawned bot for meeting '{event_summary}' ({native_meeting_id})")
             return response.json()
@@ -324,9 +324,11 @@ def process_auto_join_for_user(
         return
 
     logger.info(f"Found {len(events)} upcoming Google Meet events for account_user {account_user_id}")
-    
+
     for event in events:
-        logger.info(f"Processing event: '{event['summary']}' starting at {event['start_time']} (ID: {event['native_meeting_id']})")
+        logger.info(
+            f"Processing event: '{event['summary']}' starting at {event['start_time']} (ID: {event['native_meeting_id']})"
+        )
 
     now = datetime.now(timezone.utc)
     join_threshold = now + timedelta(minutes=AUTO_JOIN_MINUTES_BEFORE)
@@ -336,10 +338,12 @@ def process_auto_join_for_user(
 
     for event in events:
         logger.debug(f"Evaluating event '{event['summary']}' at {event['start_time']} (threshold: {join_threshold})")
-        
+
         # Skip if meeting hasn't started yet and is more than AUTO_JOIN_MINUTES_BEFORE away
         if event["start_time"] > join_threshold:
-            logger.debug(f"Skipping '{event['summary']}' - starts at {event['start_time']}, too early to join (threshold: {join_threshold})")
+            logger.debug(
+                f"Skipping '{event['summary']}' - starts at {event['start_time']}, too early to join (threshold: {join_threshold})"
+            )
             continue
 
         # Apply auto_join_mode filter
@@ -460,9 +464,11 @@ def check_and_enqueue_auto_joins():
 
             users = cur.fetchall()
             logger.info(f"Found {len(users)} users with auto-join enabled")
-            
+
             for user in users:
-                logger.info(f"Enqueuing auto-join job for account_user {user['account_user_id']} (external: {user['external_user_id']}, mode: {user['auto_join_mode']})")
+                logger.info(
+                    f"Enqueuing auto-join job for account_user {user['account_user_id']} (external: {user['external_user_id']}, mode: {user['auto_join_mode']})"
+                )
 
                 # Enqueue individual job for each user
                 # Use string path so worker can import the function properly
