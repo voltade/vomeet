@@ -30,7 +30,7 @@ from shared_models.models import (
 )
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Environment configuration
@@ -179,8 +179,14 @@ def get_upcoming_meets_sync(
         data = response.json()
 
     events = []
+    total_events = len(data.get("items", []))
+    logger.info(f"Found {total_events} total calendar events in next {minutes_ahead} minutes")
+    
     for item in data.get("items", []):
+        logger.debug(f"Processing event: {item.get('summary', 'Untitled')} (ID: {item.get('id')})")
+        
         if item.get("status") == "cancelled":
+            logger.debug(f"Skipping cancelled event: {item.get('summary', 'Untitled')}")
             continue
 
         # Extract Google Meet link
@@ -256,18 +262,25 @@ def spawn_bot_sync(
 
     Returns the meeting data on success, None on failure.
     """
+    logger.info(f"Spawning bot for meeting '{event_summary}' ({native_meeting_id}) with name '{bot_name}'")
+    
     with httpx.Client() as client:
+        request_data = {
+            "platform": "google_meet",
+            "native_meeting_id": native_meeting_id,
+            "bot_name": bot_name,
+        }
+        logger.debug(f"Bot spawn request: {request_data}")
+        
         response = client.post(
             f"{BOT_MANAGER_URL}/bots",
             headers={"X-API-Key": api_key},
-            json={
-                "platform": "google_meet",
-                "native_meeting_id": native_meeting_id,
-                "bot_name": bot_name,
-            },
+            json=request_data,
             timeout=30.0,
         )
 
+        logger.info(f"Bot spawn response status: {response.status_code}")
+        
         if response.status_code == 201:
             logger.info(f"Successfully spawned bot for meeting '{event_summary}' ({native_meeting_id})")
             return response.json()
@@ -307,8 +320,13 @@ def process_auto_join_for_user(
     # Get upcoming meetings (within next 15 minutes)
     events = get_upcoming_meets_sync(access_token, minutes_ahead=15)
     if not events:
-        logger.debug(f"No upcoming meetings for account_user {account_user_id}")
+        logger.info(f"No upcoming Google Meet events found for account_user {account_user_id}")
         return
+
+    logger.info(f"Found {len(events)} upcoming Google Meet events for account_user {account_user_id}")
+    
+    for event in events:
+        logger.info(f"Processing event: '{event['summary']}' starting at {event['start_time']} (ID: {event['native_meeting_id']})")
 
     now = datetime.now(timezone.utc)
     join_threshold = now + timedelta(minutes=AUTO_JOIN_MINUTES_BEFORE)
@@ -317,9 +335,11 @@ def process_auto_join_for_user(
     redis_conn = get_redis_connection()
 
     for event in events:
+        logger.debug(f"Evaluating event '{event['summary']}' at {event['start_time']} (threshold: {join_threshold})")
+        
         # Skip if meeting hasn't started yet and is more than AUTO_JOIN_MINUTES_BEFORE away
         if event["start_time"] > join_threshold:
-            logger.debug(f"Skipping '{event['summary']}' - starts at {event['start_time']}, too early to join")
+            logger.debug(f"Skipping '{event['summary']}' - starts at {event['start_time']}, too early to join (threshold: {join_threshold})")
             continue
 
         # Apply auto_join_mode filter
@@ -339,12 +359,18 @@ def process_auto_join_for_user(
         )
 
         # Spawn the bot
+        logger.info(f"Calling spawn_bot_sync for meeting {event['native_meeting_id']}")
         meeting_data = spawn_bot_sync(
             api_key=api_key,
             native_meeting_id=event["native_meeting_id"],
             bot_name=bot_name or "Notetaker",
             event_summary=event["summary"],
         )
+
+        if meeting_data:
+            logger.info(f"Bot spawn successful for meeting {event['native_meeting_id']}")
+        else:
+            logger.error(f"Bot spawn failed for meeting {event['native_meeting_id']}")
 
         # Mark as attempted (expire after 2 hours to allow rejoining if meeting is rescheduled)
         if meeting_data:
@@ -434,8 +460,10 @@ def check_and_enqueue_auto_joins():
 
             users = cur.fetchall()
             logger.info(f"Found {len(users)} users with auto-join enabled")
-
+            
             for user in users:
+                logger.info(f"Enqueuing auto-join job for account_user {user['account_user_id']} (external: {user['external_user_id']}, mode: {user['auto_join_mode']})")
+
                 # Enqueue individual job for each user
                 # Use string path so worker can import the function properly
                 queue.enqueue(
