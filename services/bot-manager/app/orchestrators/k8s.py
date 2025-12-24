@@ -140,8 +140,8 @@ async def start_bot_container(
         "container_name": f"vomeet-bot-{meeting_id}-{connection_id[:8]}",
         "automaticLeave": {
             "waitingRoomTimeout": 900000,
-            "noOneJoinedTimeout": 120000,
-            "everyoneLeftTimeout": 60000,
+            "noOneJoinedTimeout": 300000,
+            "everyoneLeftTimeout": 120000,
         },
         "botManagerCallbackUrl": K8S_BOT_MANAGER_CALLBACK_URL,
     }

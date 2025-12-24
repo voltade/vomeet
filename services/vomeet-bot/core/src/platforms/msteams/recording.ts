@@ -1061,10 +1061,10 @@ export async function startTeamsRecording(
 									(botConfigData && (botConfigData as any).automaticLeave) ||
 									{};
 								const startupAloneTimeoutSeconds = Number(
-									leaveCfg.startupAloneTimeoutSeconds ?? 10,
+									(leaveCfg.noOneJoinedTimeout ?? 20 * 60 * 1000) / 1000,
 								);
 								const everyoneLeftTimeoutSeconds = Number(
-									leaveCfg.everyoneLeftTimeoutSeconds ?? 10,
+									(leaveCfg.everyoneLeftTimeout ?? 10 * 60 * 1000) / 1000,
 								);
 
 								let aloneTime = 0;
