@@ -298,7 +298,61 @@ async def _get_full_transcript_segments(
 
         deduped.append(seg)
 
-    return deduped
+    # 7. Merge consecutive segments from the same speaker
+    # This creates more readable paragraphs instead of one-line segments
+    merged: List[TranscriptionSegment] = []
+    MAX_MERGED_DURATION = 60.0  # Maximum duration for a merged segment in seconds
+    MAX_GAP_SECONDS = 5.0  # Maximum gap between segments to merge
+
+    for seg in deduped:
+        if not merged:
+            merged.append(seg)
+            continue
+
+        last = merged[-1]
+        same_speaker = (seg.speaker or "Unknown") == (last.speaker or "Unknown")
+
+        # Calculate time gap between segments
+        gap_seconds = 0.0
+        if seg.absolute_start_time and last.absolute_end_time:
+            gap_seconds = (seg.absolute_start_time - last.absolute_end_time).total_seconds()
+        else:
+            gap_seconds = seg.start_time - last.end_time
+
+        # Calculate current merged segment duration
+        current_duration = 0.0
+        if last.absolute_end_time and last.absolute_start_time:
+            current_duration = (last.absolute_end_time - last.absolute_start_time).total_seconds()
+        else:
+            current_duration = last.end_time - last.start_time
+
+        # Merge if same speaker, gap is small, and merged segment won't be too long
+        should_merge = (
+            same_speaker
+            and gap_seconds >= 0
+            and gap_seconds < MAX_GAP_SECONDS
+            and current_duration < MAX_MERGED_DURATION
+        )
+
+        if should_merge:
+            # Combine text with space
+            combined_text = f"{last.text} {seg.text}".strip()
+
+            # Update the last segment with merged data
+            merged[-1] = TranscriptionSegment(
+                start_time=last.start_time,
+                end_time=seg.end_time,
+                text=combined_text,
+                language=last.language or seg.language,
+                speaker=last.speaker or seg.speaker,
+                absolute_start_time=last.absolute_start_time,
+                absolute_end_time=seg.absolute_end_time,
+                created_at=last.created_at,
+            )
+        else:
+            merged.append(seg)
+
+    return merged
 
 
 @router.get("/healthz")
