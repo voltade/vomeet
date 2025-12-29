@@ -302,7 +302,7 @@ async def _get_full_transcript_segments(
     # This creates more readable paragraphs instead of one-line segments
     merged: List[TranscriptionSegment] = []
     MAX_MERGED_DURATION = 60.0  # Maximum duration for a merged segment in seconds
-    MAX_GAP_SECONDS = 1.0  # Maximum gap between segments to merge
+    MAX_GAP_SECONDS = 0.5  # Maximum gap between segments to merge
 
     for seg in deduped:
         if not merged:
