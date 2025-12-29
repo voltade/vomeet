@@ -1064,7 +1064,7 @@ export async function startTeamsRecording(
 									(leaveCfg.noOneJoinedTimeout ?? 20 * 60 * 1000) / 1000,
 								);
 								const everyoneLeftTimeoutSeconds = Number(
-									(leaveCfg.everyoneLeftTimeout ?? 10 * 60 * 1000) / 1000,
+									(leaveCfg.everyoneLeftTimeout ?? 2 * 60 * 1000) / 1000,
 								);
 
 								let aloneTime = 0;
