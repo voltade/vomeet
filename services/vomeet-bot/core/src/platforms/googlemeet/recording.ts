@@ -648,45 +648,75 @@ export async function startGoogleRecording(
 
 							// Simple single-strategy participant extraction from main video area
 							(window as any).logBot(
-								"Initializing simplified participant counting (main frame text scan)...",
+								"Initializing participant counting via video tiles and participant panel...",
 							);
 
 							const extractParticipantsFromMain = (
 								botName: string | undefined,
 							): string[] => {
 								const participants: string[] = [];
-								const mainElement = document.querySelector("main");
-								if (mainElement) {
-									const nameElements = mainElement.querySelectorAll("*");
-									nameElements.forEach((el: Element) => {
-										const element = el as HTMLElement;
-										const text = (element.textContent || "").trim();
-										if (text && element.children.length === 0) {
-											// Basic length validation only (allow numbers, parentheses, etc.)
-											if (
-												(text.length > 1 && text.length < 50) ||
-												(botName && text === botName)
-											) {
-												participants.push(text);
-											}
-										}
-									});
-								}
-								const tooltips = document.querySelectorAll(
-									'main [role="tooltip"]',
-								);
-								tooltips.forEach((el: Element) => {
-									const text = (el.textContent || "").trim();
-									// Basic length validation only (allow numbers, parentheses, etc.)
-									if (
-										text &&
-										((text.length > 1 && text.length < 50) ||
-											(botName && text === botName))
-									) {
+								
+								// Method 1: Count video tiles with participant names
+								// Google Meet shows participant names on video tiles
+								const videoTiles = document.querySelectorAll('[data-self-name], [data-participant-id]');
+								videoTiles.forEach((tile) => {
+									const name = tile.getAttribute('data-self-name');
+									if (name && name.trim()) {
+										participants.push(name.trim());
+									}
+								});
+								
+								// Method 2: Look for participant name spans in the meeting view
+								// These are typically in spans with class containing participant info
+								const nameSpans = document.querySelectorAll('div[data-participant-id] span.notranslate, [data-self-name] span.notranslate');
+								nameSpans.forEach((span) => {
+									const text = (span.textContent || '').trim();
+									if (text && text.length > 1 && text.length < 50) {
 										participants.push(text);
 									}
 								});
-								return Array.from(new Set(participants));
+								
+								// Method 3: Check the "In this call" panel if open
+								// Look for participant list items
+								const participantListItems = document.querySelectorAll('[role="listitem"] span.notranslate');
+								participantListItems.forEach((item) => {
+									const text = (item.textContent || '').trim();
+									if (text && text.length > 1 && text.length < 50) {
+										participants.push(text);
+									}
+								});
+								
+								// Method 4: Look for video container labels/tooltips
+								const tooltips = document.querySelectorAll('[role="tooltip"]');
+								tooltips.forEach((el: Element) => {
+									const text = (el.textContent || "").trim();
+									if (text && text.length > 1 && text.length < 50) {
+										participants.push(text);
+									}
+								});
+								
+								// Method 5: Look for the participant count indicator (e.g., "2" next to people icon)
+								// This is a fallback to get at least the count
+								const peopleCountBadge = document.querySelector('[data-tab-id="1"] .google-material-icons + span, [aria-label*="participant"] span');
+								if (peopleCountBadge) {
+									const countText = (peopleCountBadge.textContent || '').trim();
+									const count = parseInt(countText, 10);
+									if (!isNaN(count) && count > 0) {
+										// If we found a count badge but no names, add placeholder entries
+										if (participants.length === 0) {
+											for (let i = 0; i < count; i++) {
+												participants.push(`Participant ${i + 1}`);
+											}
+										}
+									}
+								}
+								
+								// Filter out the bot itself if we know its name
+								const uniqueParticipants = Array.from(new Set(participants));
+								if (botName) {
+									return uniqueParticipants.filter(p => p !== botName);
+								}
+								return uniqueParticipants;
 							};
 
 							(window as any).getGoogleMeetActiveParticipants = () => {
@@ -698,8 +728,36 @@ export async function startGoogleRecording(
 								);
 								return names;
 							};
+							
+							// More reliable count that uses multiple methods
 							(window as any).getGoogleMeetActiveParticipantsCount = () => {
-								return (window as any).getGoogleMeetActiveParticipants().length;
+								// Method 1: Try to get count from the participant badge in toolbar
+								// Look for the people button with a count
+								const peopleButtons = document.querySelectorAll('[data-tab-id="1"], [aria-label*="people"], [aria-label*="participant"]');
+								for (const btn of peopleButtons) {
+									// Look for a number badge or text near the button
+									const badge = btn.querySelector('span');
+									if (badge) {
+										const countText = (badge.textContent || '').trim();
+										const count = parseInt(countText, 10);
+										if (!isNaN(count) && count > 0) {
+											(window as any).logBot(`[Participant Count] Badge method: ${count}`);
+											return count;
+										}
+									}
+								}
+								
+								// Method 2: Count video tiles (usually one per participant)
+								const videoContainers = document.querySelectorAll('[data-participant-id], [data-self-name]');
+								if (videoContainers.length > 0) {
+									(window as any).logBot(`[Participant Count] Video tiles method: ${videoContainers.length}`);
+									return videoContainers.length;
+								}
+								
+								// Method 3: Fall back to name extraction
+								const names = (window as any).getGoogleMeetActiveParticipants();
+								(window as any).logBot(`[Participant Count] Name extraction method: ${names.length}`);
+								return names.length;
 							};
 
 							// Setup Google Meet meeting monitoring (browser context)
