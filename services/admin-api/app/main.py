@@ -772,6 +772,31 @@ async def regenerate_account_api_key(
     return AccountResponse.model_validate(account)
 
 
+@admin_router.post(
+    "/accounts/{account_id}/regenerate-webhook-secret",
+    response_model=AccountResponse,
+    summary="Regenerate account webhook secret",
+    description="Generate a new webhook secret for the account. The old secret will be invalidated.",
+    tags=["Accounts"],
+)
+async def regenerate_account_webhook_secret(
+    account_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Regenerate the webhook secret for an account."""
+    account = await db.get(Account, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    account.webhook_secret = generate_secure_token(32)
+
+    await db.commit()
+    await db.refresh(account)
+
+    logger.info(f"Regenerated webhook secret for account '{account.name}' (ID: {account.id})")
+    return AccountResponse.model_validate(account)
+
+
 @admin_router.delete(
     "/accounts/{account_id}",
     status_code=status.HTTP_204_NO_CONTENT,

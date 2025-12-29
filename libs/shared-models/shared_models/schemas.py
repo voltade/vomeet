@@ -445,6 +445,7 @@ class AccountUpdate(BaseModel):
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
     webhook_url: Optional[str] = None
+    webhook_secret: Optional[str] = None
     max_concurrent_bots: Optional[int] = Field(None, ge=1)
     enabled: Optional[bool] = None
 
