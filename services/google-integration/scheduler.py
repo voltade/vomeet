@@ -336,6 +336,10 @@ def process_auto_join_for_user(
     # Get Redis connection for deduplication
     redis_conn = get_redis_connection()
 
+    # Dedup TTL: 20 minutes (slightly longer than 15-min look-ahead window + buffer for clock skew)
+    # Short enough to allow retries if bot fails, long enough to prevent double-spawning
+    DEDUP_TTL_SECONDS = 1200  # 20 minutes
+
     for event in events:
         logger.debug(f"Evaluating event '{event['summary']}' at {event['start_time']} (threshold: {join_threshold})")
 
@@ -352,9 +356,29 @@ def process_auto_join_for_user(
                 logger.debug(f"Skipping '{event['summary']}' - user is not creator/organizer (mode: my_events_only)")
                 continue
 
-        # Check if we've already tried to join this meeting (deduplication)
-        dedup_key = f"auto_join:spawned:{account_id}:{event['native_meeting_id']}"
-        if redis_conn.exists(dedup_key):
+        # Event-based deduplication: Use event_id + start_time to handle rescheduled meetings
+        # This ensures that if the same meeting is rescheduled to a new time, we'll join it again
+        event_start_iso = event["start_time"].isoformat()
+        event_start_key = event["start_time"].strftime("%Y%m%d%H%M")  # Compact key for Redis dedup
+        dedup_key = f"auto_join:spawned:{account_id}:{event['event_id']}:{event_start_key}"
+
+        # Also track the previous start time for this event to detect rescheduling (stored as ISO)
+        event_time_key = f"auto_join:event_time:{account_id}:{event['event_id']}"
+        previous_start_time = redis_conn.get(event_time_key)
+
+        is_rescheduled = False
+        previous_start_iso = None
+        if previous_start_time:
+            previous_start_iso = (
+                previous_start_time.decode("utf-8") if isinstance(previous_start_time, bytes) else previous_start_time
+            )
+            if previous_start_iso != event_start_iso:
+                is_rescheduled = True
+                logger.info(
+                    f"Meeting '{event['summary']}' was rescheduled from {previous_start_iso} to {event_start_iso}"
+                )
+
+        if redis_conn.exists(dedup_key) and not is_rescheduled:
             logger.debug(f"Skipping '{event['summary']}' - already attempted to join (dedup key exists)")
             continue
 
@@ -376,12 +400,45 @@ def process_auto_join_for_user(
         else:
             logger.error(f"Bot spawn failed for meeting {event['native_meeting_id']}")
 
-        # Mark as attempted (expire after 2 hours to allow rejoining if meeting is rescheduled)
+        # Mark as attempted with 30 minute TTL
         if meeting_data:
-            redis_conn.setex(dedup_key, 7200, "1")  # 2 hour TTL
+            redis_conn.setex(dedup_key, DEDUP_TTL_SECONDS, "1")
+            # Store the current start time (ISO format) for future rescheduling detection (24 hour TTL)
+            redis_conn.setex(event_time_key, 86400, event_start_iso)
+
+            # Send meeting.rescheduled webhook if this is a rescheduled meeting
+            if webhook_url and is_rescheduled:
+                reschedule_payload = {
+                    "event": "meeting.rescheduled",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "meeting": {
+                        "id": meeting_data.get("id"),
+                        "bot_id": meeting_data.get("id"),
+                        "platform": "google_meet",
+                        "native_meeting_id": event["native_meeting_id"],
+                        "meeting_url": meeting_data.get("constructed_meeting_url"),
+                        "status": meeting_data.get("status"),
+                        "created_at": meeting_data.get("created_at"),
+                    },
+                    "calendar_event": {
+                        "event_id": event["event_id"],
+                        "title": event["summary"],
+                        "scheduled_at": event_start_iso,
+                        "previous_scheduled_at": previous_start_iso,
+                        "is_creator_self": event.get("is_creator_self", False),
+                        "is_organizer_self": event.get("is_organizer_self", False),
+                        "attendees": event.get("attendees", []),
+                    },
+                    "user": {
+                        "external_user_id": external_user_id,
+                        "account_user_id": account_user_id,
+                        "account_id": account_id,
+                    },
+                }
+                send_webhook(webhook_url, webhook_secret, "meeting.rescheduled", reschedule_payload)
 
             # Send meeting.created webhook if not already exists and webhook is configured
-            if webhook_url and not meeting_data.get("already_exists"):
+            elif webhook_url and not meeting_data.get("already_exists"):
                 webhook_payload = {
                     "event": "meeting.created",
                     "timestamp": datetime.now(timezone.utc).isoformat(),

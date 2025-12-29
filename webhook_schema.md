@@ -19,6 +19,8 @@ bot.active
 bot.stopping
 bot.ended
 bot.failed
+meeting.created
+meeting.rescheduled
 transcript.ready
 transcript.segment
 ```
@@ -29,6 +31,11 @@ When a meeting ends, webhooks are sent in this order:
 
 1. **`bot.ended`** - Sent immediately when bot exits the meeting
 2. **`transcript.ready`** - Sent after transcript is finalized with full transcript data
+
+For auto-joined meetings from calendar integration:
+
+1. **`meeting.created`** - Sent when bot is spawned for a calendar event
+2. **`meeting.rescheduled`** - Sent if the same calendar event is rescheduled to a new time
 
 ## Payload Structure
 
@@ -102,6 +109,88 @@ Sent after the meeting ends with the complete transcript:
     "full_text": "Alice: Hello everyone, thanks for joining.\nBob: Hi Alice, glad to be here.",
     "participants": ["Alice", "Bob"],
     "languages": ["en"]
+  }
+}
+```
+
+### meeting.created Event (Calendar Auto-Join)
+
+Sent when a bot is automatically spawned for a calendar event:
+
+```json
+{
+  "event": "meeting.created",
+  "timestamp": "2025-12-23T09:58:00.000000",
+  "meeting": {
+    "id": 123,
+    "bot_id": 123,
+    "platform": "google_meet",
+    "native_meeting_id": "abc-defg-hij",
+    "meeting_url": "https://meet.google.com/abc-defg-hij",
+    "status": "requested",
+    "created_at": "2025-12-23T09:58:00.000000"
+  },
+  "calendar_event": {
+    "event_id": "google_calendar_event_id_123",
+    "title": "Team Standup",
+    "scheduled_at": "2025-12-23T10:00:00+00:00",
+    "is_creator_self": true,
+    "is_organizer_self": true,
+    "attendees": [
+      {
+        "email": "alice@example.com",
+        "name": "Alice",
+        "response_status": "accepted",
+        "is_organizer": true,
+        "is_self": true
+      },
+      {
+        "email": "bob@example.com",
+        "name": "Bob",
+        "response_status": "accepted",
+        "is_organizer": false,
+        "is_self": false
+      }
+    ]
+  },
+  "user": {
+    "external_user_id": "user-123",
+    "account_user_id": 5,
+    "account_id": 1
+  }
+}
+```
+
+### meeting.rescheduled Event
+
+Sent when a calendar event is rescheduled and the bot joins at the new time:
+
+```json
+{
+  "event": "meeting.rescheduled",
+  "timestamp": "2025-12-23T10:58:00.000000",
+  "meeting": {
+    "id": 124,
+    "bot_id": 124,
+    "platform": "google_meet",
+    "native_meeting_id": "abc-defg-hij",
+    "meeting_url": "https://meet.google.com/abc-defg-hij",
+    "status": "requested",
+    "created_at": "2025-12-23T10:58:00.000000"
+  },
+  "calendar_event": {
+    "event_id": "google_calendar_event_id_123",
+    "title": "Team Standup",
+    "scheduled_at": "2025-12-23T11:00:00+00:00",
+    "previous_scheduled_at": "2025-12-23T10:00:00+00:00",
+    "is_creator_self": true,
+    "is_organizer_self": true,
+    "attendees": [...]
+  },
+  "user": {
+    "external_user_id": "user-123",
+    "account_user_id": 5,
+    "account_id": 1
   }
 }
 ```

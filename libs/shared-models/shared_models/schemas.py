@@ -1126,6 +1126,7 @@ class WebhookEventType(str, Enum):
     # Meeting events
     MEETING_CREATED = "meeting.created"
     MEETING_UPDATED = "meeting.updated"
+    MEETING_RESCHEDULED = "meeting.rescheduled"
     MEETING_STATUS_CHANGE = "meeting.status_change"
 
     # Transcript events
