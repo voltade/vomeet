@@ -5,11 +5,15 @@ This task must run before webhooks so the meeting data is complete.
 """
 
 import logging
+import os
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from shared_models.models import Meeting
 
 logger = logging.getLogger(__name__)
+
+# Transcription collector service URL (use K8s service name in production)
+TRANSCRIPTION_COLLECTOR_URL = os.getenv("TRANSCRIPTION_COLLECTOR_URL", "http://vomeet-transcription-collector:8000")
 
 # Priority: lower runs first. Aggregation must run before webhooks.
 PRIORITY = 10
@@ -25,7 +29,7 @@ async def run(meeting: Meeting, db: AsyncSession):
 
     try:
         # The collector service is internal, so we can use its service name
-        collector_url = f"http://transcription-collector:8000/internal/transcripts/{meeting_id}"
+        collector_url = f"{TRANSCRIPTION_COLLECTOR_URL}/internal/transcripts/{meeting_id}"
 
         async with httpx.AsyncClient() as client:
             logger.info(f"Calling transcription-collector for meeting {meeting_id} at {collector_url}")

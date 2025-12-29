@@ -12,17 +12,21 @@ import httpx
 import hmac
 import hashlib
 import json
+import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from shared_models.models import Meeting, Account
 
 logger = logging.getLogger(__name__)
 
+# Transcription collector service URL (use K8s service name in production)
+TRANSCRIPTION_COLLECTOR_URL = os.getenv("TRANSCRIPTION_COLLECTOR_URL", "http://vomeet-transcription-collector:8000")
+
 # Priority: lower runs first. Runs last after bot.ended (20) so transcript is fully processed.
 PRIORITY = 30
 
 # Delay in seconds before sending transcript webhook (allows aggregation to complete)
-TRANSCRIPT_DELAY_SECONDS = 60
+TRANSCRIPT_DELAY_SECONDS = 30
 
 
 def compute_signature(payload: str, secret: str) -> str:
@@ -61,7 +65,7 @@ async def run(meeting: Meeting, db: AsyncSession):
             return
 
         # Fetch transcript from transcription-collector
-        collector_url = f"http://transcription-collector:8000/internal/transcripts/{meeting.id}"
+        collector_url = f"{TRANSCRIPTION_COLLECTOR_URL}/internal/transcripts/{meeting.id}"
 
         transcript_segments = []
         try:

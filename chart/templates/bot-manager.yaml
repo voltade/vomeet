@@ -75,6 +75,8 @@ spec:
               value: http://{{ include "vomeet.fullname" . }}-bot-manager:{{ $config.port }}/bots/internal/callback/exited
             - name: WHISPER_LIVE_URL
               value: {{ $config.whisperLiveUrl | default "wss://vomeet-whisper-proxy.voltade.workers.dev/ws" | quote }}
+            - name: TRANSCRIPTION_COLLECTOR_URL
+              value: http://{{ include "vomeet.fullname" . }}-transcription-collector:8000
             {{- range $key, $value := $config.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
