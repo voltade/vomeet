@@ -651,6 +651,58 @@ export async function startGoogleRecording(
 								"Initializing participant counting via video tiles and participant panel...",
 							);
 
+							// Common bot name patterns to detect AI meeting bots
+							// This ensures multiple bots in a meeting don't keep each other alive
+							const BOT_NAME_PATTERNS = [
+								/notetaker/i,
+								/note\s*taker/i,
+								/ai\s*assistant/i,
+								/meeting\s*assistant/i,
+								/meeting\s*bot/i,
+								/recorder/i,
+								/transcriber/i,
+								/vomeet/i,
+								/fireflies/i,
+								/otter\.?ai/i,
+								/grain/i,
+								/fathom/i,
+								/krisp/i,
+								/tactiq/i,
+								/meetgeek/i,
+								/avoma/i,
+								/gong/i,
+								/chorus/i,
+								/read\.?ai/i,
+								/sembly/i,
+								/fellow/i,
+								/vowel/i,
+								/supernormal/i,
+								/colibri/i,
+								/jamie/i,
+								/circleback/i,
+								/tldv/i,
+								/airgram/i,
+								/notta/i,
+								/notiv/i,
+								/rewatch/i,
+								/recall\.?ai/i,
+								/'s\s+notetaker$/i,  // "Bryan's Notetaker", "Randy's AI Meeting Assistant"
+								/'s\s+ai\s+/i,
+								/'s\s+meeting\s+/i,
+							];
+
+							const isLikelyBot = (name: string): boolean => {
+								if (!name) return false;
+								const trimmed = name.trim().toLowerCase();
+								// Check against known bot patterns
+								for (const pattern of BOT_NAME_PATTERNS) {
+									if (pattern.test(trimmed)) {
+										return true;
+									}
+								}
+								return false;
+							};
+
 							const extractParticipantsFromMain = (
 								botName: string | undefined,
 							): string[] => {
@@ -719,6 +771,13 @@ export async function startGoogleRecording(
 								return uniqueParticipants;
 							};
 
+							// Get participants excluding all detected bots (for alone detection)
+							const getHumanParticipants = (botName: string | undefined): string[] => {
+								const allParticipants = extractParticipantsFromMain(botName);
+								const humans = allParticipants.filter(p => !isLikelyBot(p));
+								return humans;
+							};
+
 							(window as any).getGoogleMeetActiveParticipants = () => {
 								const names = extractParticipantsFromMain(
 									(botConfigData as any)?.botName,
@@ -728,8 +787,26 @@ export async function startGoogleRecording(
 								);
 								return names;
 							};
+
+							// Get human participant count (excludes detected bots)
+							// This is used for alone detection to prevent bots keeping each other alive
+							(window as any).getGoogleMeetHumanParticipantsCount = () => {
+								const botName = (botConfigData as any)?.botName;
+								const humans = getHumanParticipants(botName);
+								const allParticipants = extractParticipantsFromMain(botName);
+								const botCount = allParticipants.length - humans.length;
+								if (botCount > 0) {
+									(window as any).logBot(
+										`[Participant Count] Detected ${botCount} other bot(s): ${allParticipants.filter(p => isLikelyBot(p)).join(', ')}`,
+									);
+								}
+								(window as any).logBot(
+									`[Participant Count] Human participants: ${humans.length} (${humans.join(', ') || 'none'})`,
+								);
+								return humans.length;
+							};
 							
-							// More reliable count that uses multiple methods
+							// More reliable count that uses multiple methods (includes all participants)
 							(window as any).getGoogleMeetActiveParticipantsCount = () => {
 								// Method 1: Try to get count from the participant badge in toolbar
 								// Look for the people button with a count
@@ -782,34 +859,35 @@ export async function startGoogleRecording(
 								);
 
 								let aloneTime = 0;
-								let lastParticipantCount = 0;
+								let lastHumanCount = 0;
 								let speakersIdentified = false;
-								let hasEverHadMultipleParticipants = false;
+								let hasEverHadHumanParticipants = false;
 
 								const checkInterval = setInterval(() => {
-									// Check participant count using the comprehensive helper
-									const currentParticipantCount = (window as any)
-										.getGoogleMeetActiveParticipantsCount
-										? (window as any).getGoogleMeetActiveParticipantsCount()
+									// Check HUMAN participant count (excludes detected bots)
+									// This prevents multiple bots from keeping each other alive
+									const humanCount = (window as any)
+										.getGoogleMeetHumanParticipantsCount
+										? (window as any).getGoogleMeetHumanParticipantsCount()
 										: 0;
 
-									if (currentParticipantCount !== lastParticipantCount) {
+									if (humanCount !== lastHumanCount) {
 										(window as any).logBot(
-											`Participant check: Found ${currentParticipantCount} unique participants from central list.`,
+											`Human participant check: Found ${humanCount} human participants (excluding bots).`,
 										);
-										lastParticipantCount = currentParticipantCount;
+										lastHumanCount = humanCount;
 
-										// Track if we've ever had multiple participants
-										if (currentParticipantCount > 1) {
-											hasEverHadMultipleParticipants = true;
-											speakersIdentified = true; // Once we see multiple participants, we've identified speakers
+										// Track if we've ever had human participants
+										if (humanCount >= 1) {
+											hasEverHadHumanParticipants = true;
+											speakersIdentified = true; // Once we see humans, we've identified speakers
 											(window as any).logBot(
-												"Speakers identified - switching to post-speaker monitoring mode",
+												"Human speakers identified - switching to post-speaker monitoring mode",
 											);
 										}
 									}
 
-									if (currentParticipantCount <= 1) {
+									if (humanCount === 0) {
 										aloneTime++;
 
 										// Determine timeout based on whether speakers have been identified
@@ -853,16 +931,16 @@ export async function startGoogleRecording(
 												const remainingSeconds =
 													(currentTimeout - aloneTime) % 60;
 												(window as any).logBot(
-													`Bot has been alone for ${aloneTime} seconds during startup. Will leave in ${remainingMinutes}m ${remainingSeconds}s.`,
+													`Bot has been alone for ${aloneTime} seconds during startup (no human participants). Will leave in ${remainingMinutes}m ${remainingSeconds}s.`,
 												);
 											}
 										}
 									} else {
-										aloneTime = 0; // Reset if others are present
-										if (hasEverHadMultipleParticipants && !speakersIdentified) {
+										aloneTime = 0; // Reset if humans are present
+										if (hasEverHadHumanParticipants && !speakersIdentified) {
 											speakersIdentified = true;
 											(window as any).logBot(
-												"Speakers identified - switching to post-speaker monitoring mode",
+												"Human speakers identified - switching to post-speaker monitoring mode",
 											);
 										}
 									}

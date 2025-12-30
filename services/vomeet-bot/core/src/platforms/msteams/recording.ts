@@ -991,6 +991,57 @@ export async function startTeamsRecording(
 								countParticipants();
 								setInterval(countParticipants, 5000);
 
+								// Common bot name patterns to detect AI meeting bots
+								// This ensures multiple bots in a meeting don't keep each other alive
+								const BOT_NAME_PATTERNS = [
+									/notetaker/i,
+									/note\s*taker/i,
+									/ai\s*assistant/i,
+									/meeting\s*assistant/i,
+									/meeting\s*bot/i,
+									/recorder/i,
+									/transcriber/i,
+									/vomeet/i,
+									/fireflies/i,
+									/otter\.?ai/i,
+									/grain/i,
+									/fathom/i,
+									/krisp/i,
+									/tactiq/i,
+									/meetgeek/i,
+									/avoma/i,
+									/gong/i,
+									/chorus/i,
+									/read\.?ai/i,
+									/sembly/i,
+									/fellow/i,
+									/vowel/i,
+									/supernormal/i,
+									/colibri/i,
+									/jamie/i,
+									/circleback/i,
+									/tldv/i,
+									/airgram/i,
+									/notta/i,
+									/notiv/i,
+									/rewatch/i,
+									/recall\.?ai/i,
+									/'s\s+notetaker$/i,
+									/'s\s+ai\s+/i,
+									/'s\s+meeting\s+/i,
+								];
+
+								function isLikelyBot(name: string): boolean {
+									if (!name) return false;
+									const trimmed = name.trim().toLowerCase();
+									for (const pattern of BOT_NAME_PATTERNS) {
+										if (pattern.test(trimmed)) {
+											return true;
+										}
+									}
+									return false;
+								}
+
 								// Expose participant count for meeting monitoring
 								// Accessible-roles based participant collection (robust and simple)
 								function collectAriaParticipants(): string[] {
@@ -1027,24 +1078,48 @@ export async function startTeamsRecording(
 									}
 								}
 
-								(window as any).getTeamsActiveParticipantsCount = () => {
-									// Use ARIA role-based collection and include the bot if name is known
-									const names = collectAriaParticipants();
-									const total = botConfigData?.name
-										? names.length + 1
-										: names.length;
-									return total;
-								};
-								(window as any).getTeamsActiveParticipants = () => {
-									// Return ARIA role-based names plus bot (if known)
-									const names = collectAriaParticipants();
-									if (botConfigData?.name) names.push(botConfigData.name);
-									(window as any).logBot(
-										`🔍 [ARIA Participants] ${JSON.stringify(names)}`,
-									);
-									return names;
-								};
+								// Get human participants only (excludes detected bots)
+								function collectHumanParticipants(): string[] {
+									const all = collectAriaParticipants();
+									const humans = all.filter(name => !isLikelyBot(name));
+									return humans;
+								}
+
+							(window as any).getTeamsActiveParticipantsCount = () => {
+								// Use ARIA role-based collection and include the bot if name is known
+								const names = collectAriaParticipants();
+								const total = botConfigData?.name
+									? names.length + 1
+									: names.length;
+								return total;
 							};
+							(window as any).getTeamsActiveParticipants = () => {
+								// Return ARIA role-based names plus bot (if known)
+								const names = collectAriaParticipants();
+								if (botConfigData?.name) names.push(botConfigData.name);
+								(window as any).logBot(
+									`🔍 [ARIA Participants] ${JSON.stringify(names)}`,
+								);
+								return names;
+							};
+							
+							// Human participant count (excludes detected bots)
+							// Used for alone detection to prevent bots keeping each other alive
+							(window as any).getTeamsHumanParticipantsCount = () => {
+								const humans = collectHumanParticipants();
+								const allParticipants = collectAriaParticipants();
+								const botCount = allParticipants.length - humans.length;
+								if (botCount > 0) {
+									(window as any).logBot(
+										`[Participant Count] Detected ${botCount} other bot(s): ${allParticipants.filter(p => isLikelyBot(p)).join(', ')}`,
+									);
+								}
+								(window as any).logBot(
+									`[Participant Count] Human participants: ${humans.length} (${humans.join(', ') || 'none'})`,
+								);
+								return humans.length;
+							};
+						};
 
 							// Setup Teams meeting monitoring (browser context)
 							const setupTeamsMeetingMonitoring = (
@@ -1068,9 +1143,9 @@ export async function startTeamsRecording(
 								);
 
 								let aloneTime = 0;
-								let lastParticipantCount = 0;
+								let lastHumanCount = 0;
 								let speakersIdentified = false;
-								let hasEverHadMultipleParticipants = false;
+								let hasEverHadHumanParticipants = false;
 
 								// Teams removal detection function (browser context)
 								const checkForRemoval = () => {
@@ -1146,37 +1221,38 @@ export async function startTeamsRecording(
 										reject(new Error("TEAMS_BOT_REMOVED_BY_ADMIN"));
 										return;
 									}
-									// Check participant count using the comprehensive speaker detection system
-									const currentParticipantCount = (window as any)
-										.getTeamsActiveParticipantsCount
-										? (window as any).getTeamsActiveParticipantsCount()
+									// Check HUMAN participant count (excludes detected bots)
+									// This prevents multiple bots from keeping each other alive
+									const humanCount = (window as any)
+										.getTeamsHumanParticipantsCount
+										? (window as any).getTeamsHumanParticipantsCount()
 										: 0;
 
-									if (currentParticipantCount !== lastParticipantCount) {
+									if (humanCount !== lastHumanCount) {
 										(window as any).logBot(
-											`🔢 Teams participant count changed: ${lastParticipantCount} → ${currentParticipantCount}`,
+											`🔢 Teams human participant count changed: ${lastHumanCount} → ${humanCount}`,
 										);
 										const participantList = (window as any)
 											.getTeamsActiveParticipants
 											? (window as any).getTeamsActiveParticipants()
 											: [];
 										(window as any).logBot(
-											`👥 Current participants: ${JSON.stringify(participantList)}`,
+											`👥 All participants: ${JSON.stringify(participantList)}`,
 										);
 
-										lastParticipantCount = currentParticipantCount;
+										lastHumanCount = humanCount;
 
-										// Track if we've ever had multiple participants
-										if (currentParticipantCount > 1) {
-											hasEverHadMultipleParticipants = true;
-											speakersIdentified = true; // Once we see multiple participants, we've identified speakers
+										// Track if we've ever had human participants
+										if (humanCount >= 1) {
+											hasEverHadHumanParticipants = true;
+											speakersIdentified = true; // Once we see humans, we've identified speakers
 											(window as any).logBot(
-												"Teams Speakers identified - switching to post-speaker monitoring mode",
+												"Teams human speakers identified - switching to post-speaker monitoring mode",
 											);
 										}
 									}
 
-									if (currentParticipantCount === 0) {
+									if (humanCount === 0) {
 										aloneTime++;
 
 										// Determine timeout based on whether speakers have been identified
@@ -1202,7 +1278,7 @@ export async function startTeamsRecording(
 												reject(new Error("TEAMS_BOT_LEFT_ALONE_TIMEOUT"));
 											} else {
 												(window as any).logBot(
-													`Teams bot has been alone for ${startupAloneTimeoutSeconds} seconds during startup with no other participants. Stopping recorder...`,
+													`Teams bot has been alone for ${startupAloneTimeoutSeconds} seconds during startup with no human participants. Stopping recorder...`,
 												);
 												clearInterval(checkInterval);
 												audioService.disconnect();
@@ -1222,16 +1298,16 @@ export async function startTeamsRecording(
 												const remainingSeconds =
 													(currentTimeout - aloneTime) % 60;
 												(window as any).logBot(
-													`Teams bot has been alone for ${aloneTime} seconds during startup. Will leave in ${remainingMinutes}m ${remainingSeconds}s.`,
+													`Teams bot has been alone for ${aloneTime} seconds during startup (no human participants). Will leave in ${remainingMinutes}m ${remainingSeconds}s.`,
 												);
 											}
 										}
 									} else {
-										aloneTime = 0; // Reset if others are present
-										if (hasEverHadMultipleParticipants && !speakersIdentified) {
+										aloneTime = 0; // Reset if humans are present
+										if (hasEverHadHumanParticipants && !speakersIdentified) {
 											speakersIdentified = true;
 											(window as any).logBot(
-												"Teams speakers identified - switching to post-speaker monitoring mode",
+												"Teams human speakers identified - switching to post-speaker monitoring mode",
 											);
 										}
 									}
