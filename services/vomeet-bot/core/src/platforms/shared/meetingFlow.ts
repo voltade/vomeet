@@ -17,6 +17,7 @@ export type LeaveReason =
 	| "removed_by_admin"
 	| "left_alone_timeout"
 	| "startup_alone_timeout"
+	| "idle_after_scheduled_end"
 	| "normal_completion"
 	| string;
 
@@ -24,12 +25,14 @@ function generateReasonTokens(platform: string): {
 	removedToken: string;
 	leftAloneToken: string;
 	startupAloneToken: string;
+	idleAfterScheduledEndToken: string;
 } {
 	const platformUpper = platform.toUpperCase();
 	return {
 		removedToken: `${platformUpper}_BOT_REMOVED_BY_ADMIN`,
 		leftAloneToken: `${platformUpper}_BOT_LEFT_ALONE_TIMEOUT`,
 		startupAloneToken: `${platformUpper}_BOT_STARTUP_ALONE_TIMEOUT`,
+		idleAfterScheduledEndToken: `${platformUpper}_BOT_IDLE_AFTER_SCHEDULED_END`,
 	};
 }
 
@@ -207,6 +210,13 @@ export async function runMeetingFlow(
 				await gracefulLeaveFunction(page, 0, "startup_alone_timeout");
 				return;
 			}
+			if (
+				msg === tokens.idleAfterScheduledEndToken ||
+				msg.includes(tokens.idleAfterScheduledEndToken)
+			) {
+				await gracefulLeaveFunction(page, 0, "idle_after_scheduled_end");
+				return;
+			}
 
 			const errorDetails = {
 				error_message: error?.message,
@@ -238,6 +248,10 @@ export async function runMeetingFlow(
 		}
 		if (msg.includes(tokens.startupAloneToken)) {
 			await gracefulLeaveFunction(page, 0, "startup_alone_timeout");
+			return;
+		}
+		if (msg.includes(tokens.idleAfterScheduledEndToken)) {
+			await gracefulLeaveFunction(page, 0, "idle_after_scheduled_end");
 			return;
 		}
 

@@ -96,6 +96,7 @@ async def start_bot_container(
     native_meeting_id: str,
     language: Optional[str],
     task: Optional[str],
+    scheduled_end_time: Optional[str] = None,  # ISO 8601 format or Unix timestamp in ms
 ) -> Optional[Tuple[str, str]]:
     """Create a Kubernetes Job for a vomeet-bot instance.
 
@@ -142,8 +143,10 @@ async def start_bot_container(
             "waitingRoomTimeout": 900000,
             "noOneJoinedTimeout": 300000,
             "everyoneLeftTimeout": 120000,
+            "idleAfterScheduledEndTimeout": 900000,  # 15 minutes (in milliseconds)
         },
         "botManagerCallbackUrl": K8S_BOT_MANAGER_CALLBACK_URL,
+        "scheduledEndTime": scheduled_end_time,  # ISO 8601 string or Unix timestamp in ms
     }
 
     # Remove None values

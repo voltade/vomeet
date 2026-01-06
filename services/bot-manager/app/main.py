@@ -49,6 +49,7 @@ from shared_models.schemas import (
 
 # Auth - Account-based authentication (B2B)
 from app.auth import get_account_from_api_key
+from app.tasks.meeting_reconciliation import start_reconciliation_task, stop_reconciliation_task
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -364,7 +365,18 @@ async def startup_event():
         redis_client = None  # Ensure client is None if connection fails
     # --------------------------------------
 
-    logger.info("Database, Docker Client (attempted), and Redis Client (attempted) initialized.")
+    # --- Start Meeting Reconciliation Background Task ---
+    # This task periodically checks for orphaned meetings whose bot containers
+    # have died unexpectedly (e.g., deadline exceeded, OOM, crash) and properly
+    # finalizes them with appropriate status.
+    try:
+        await start_reconciliation_task()
+        logger.info("Meeting reconciliation background task started.")
+    except Exception as e:
+        logger.error(f"Failed to start reconciliation task: {e}", exc_info=True)
+    # ---------------------------------------------------
+
+    logger.info("Database, Docker Client (attempted), Redis Client (attempted), and Reconciliation Task initialized.")
 
 
 @app.on_event("shutdown")
@@ -372,6 +384,14 @@ async def shutdown_event():
     global redis_client  # <-- Add global reference
     logger.info("Shutting down Bot Manager...")
     # await close_redis() # Removed redis close if not used
+
+    # --- Stop Meeting Reconciliation Task ---
+    try:
+        await stop_reconciliation_task()
+        logger.info("Meeting reconciliation task stopped.")
+    except Exception as e:
+        logger.error(f"Error stopping reconciliation task: {e}", exc_info=True)
+    # ----------------------------------------
 
     # --- ADD Redis Client Closing ---
     if redis_client:
@@ -492,6 +512,40 @@ async def root():
 @app.get("/healthz", tags=["General"])
 async def healthz():
     return {"status": "ok"}
+
+
+@app.post(
+    "/reconcile",
+    tags=["Operations"],
+    summary="Manually trigger meeting reconciliation",
+    description="Triggers an immediate reconciliation of orphaned meetings. "
+    "This finds meetings stuck in 'active' state whose bot containers have terminated.",
+)
+async def trigger_reconciliation():
+    """
+    Manually trigger the meeting reconciliation process.
+
+    This is useful for:
+    - Debugging orphaned meeting issues
+    - Forcing immediate cleanup without waiting for the periodic task
+    - Testing the reconciliation logic
+
+    Returns a summary of what was reconciled.
+    """
+    from app.tasks.meeting_reconciliation import reconcile_orphaned_meetings
+
+    logger.info("Manual reconciliation triggered via API")
+    results = await reconcile_orphaned_meetings()
+    return {
+        "status": "completed",
+        "summary": {
+            "meetings_checked": results["checked"],
+            "meetings_finalized": results["finalized"],
+            "meetings_still_running": results["still_running"],
+            "errors": results["errors"],
+        },
+        "details": results["details"],
+    }
 
 
 @app.post(

@@ -503,6 +503,11 @@ export async function startGoogleRecording(
 										indicatorSpeaking || classInference.speaking;
 
 									if (isCurrentlySpeaking) {
+										// Update last speech activity time for idle detection
+										if (typeof (window as any).__vomeetUpdateLastSpeechActivity === 'function') {
+											(window as any).__vomeetUpdateLastSpeechActivity();
+										}
+										
 										if (previousLogicalState !== "speaking") {
 											(window as any).logBot(
 												`🎤 [Google] SPEAKER_START: ${participantName} (ID: ${participantId})`,
@@ -857,13 +862,49 @@ export async function startGoogleRecording(
 								const everyoneLeftTimeoutSeconds = Number(
 									(leaveCfg.everyoneLeftTimeout ?? 2 * 60 * 1000) / 1000,
 								);
+								// Idle timeout after scheduled end: default 15 minutes (900000ms -> 900 seconds)
+								const idleAfterScheduledEndTimeoutSeconds = Number(
+									(leaveCfg.idleAfterScheduledEndTimeout ?? 15 * 60 * 1000) / 1000,
+								);
+
+								// Parse scheduled end time if provided
+								let scheduledEndTimeMs: number | null = null;
+								if (botConfigData?.scheduledEndTime) {
+									const endTime = botConfigData.scheduledEndTime;
+									if (typeof endTime === 'number') {
+										scheduledEndTimeMs = endTime;
+									} else if (typeof endTime === 'string') {
+										const parsed = Date.parse(endTime);
+										if (!isNaN(parsed)) {
+											scheduledEndTimeMs = parsed;
+										}
+									}
+									if (scheduledEndTimeMs) {
+										const endTimeStr = new Date(scheduledEndTimeMs).toISOString();
+										(window as any).logBot(
+											`📅 Scheduled meeting end time: ${endTimeStr}`
+										);
+									}
+								}
 
 								let aloneTime = 0;
 								let lastHumanCount = 0;
 								let speakersIdentified = false;
 								let hasEverHadHumanParticipants = false;
+								
+								// Track last speech activity for idle detection after scheduled end
+								let lastSpeechActivityTime = Date.now();
+								let idleAfterScheduledEndWarningLogged = false;
+
+								// Expose a function to update last speech activity time
+								// This will be called from the speaker detection logic
+								(window as any).__vomeetUpdateLastSpeechActivity = () => {
+									lastSpeechActivityTime = Date.now();
+								};
 
 								const checkInterval = setInterval(() => {
+									const now = Date.now();
+									
 									// Check HUMAN participant count (excludes detected bots)
 									// This prevents multiple bots from keeping each other alive
 									const humanCount = (window as any)
@@ -941,6 +982,47 @@ export async function startGoogleRecording(
 											speakersIdentified = true;
 											(window as any).logBot(
 												"Human speakers identified - switching to post-speaker monitoring mode",
+											);
+										}
+									}
+
+									// Check for idle timeout after scheduled meeting end time
+									// This triggers when: past scheduled end AND no speech for idleAfterScheduledEndTimeout
+									if (scheduledEndTimeMs && now > scheduledEndTimeMs) {
+										const timeSinceScheduledEnd = now - scheduledEndTimeMs;
+										const timeSinceLastSpeech = now - lastSpeechActivityTime;
+										const timeSinceLastSpeechSeconds = Math.floor(timeSinceLastSpeech / 1000);
+										
+										// Log once when we first pass the scheduled end time
+										if (!idleAfterScheduledEndWarningLogged) {
+											idleAfterScheduledEndWarningLogged = true;
+											const minutesPast = Math.floor(timeSinceScheduledEnd / 60000);
+											(window as any).logBot(
+												`⏰ Meeting has passed scheduled end time by ${minutesPast} minute(s). ` +
+												`Will auto-leave if no speech activity for ${idleAfterScheduledEndTimeoutSeconds / 60} minutes.`
+											);
+										}
+										
+										// Check if we've been idle for too long after scheduled end
+										if (timeSinceLastSpeechSeconds >= idleAfterScheduledEndTimeoutSeconds) {
+											const idleMinutes = Math.floor(timeSinceLastSpeechSeconds / 60);
+											const pastEndMinutes = Math.floor(timeSinceScheduledEnd / 60000);
+											(window as any).logBot(
+												`🛑 No speech activity for ${idleMinutes} minutes after meeting's scheduled end time ` +
+												`(${pastEndMinutes} minutes past scheduled end). Stopping recorder...`
+											);
+											clearInterval(checkInterval);
+											audioService.disconnect();
+											whisperLiveService.close();
+											reject(new Error("GOOGLE_MEET_BOT_IDLE_AFTER_SCHEDULED_END"));
+											return;
+										} else if (timeSinceLastSpeechSeconds > 0 && timeSinceLastSpeechSeconds % 60 === 0) {
+											// Log every minute to show idle progress
+											const remainingSeconds = idleAfterScheduledEndTimeoutSeconds - timeSinceLastSpeechSeconds;
+											const remainingMinutes = Math.floor(remainingSeconds / 60);
+											(window as any).logBot(
+												`⏳ Past scheduled end: idle for ${timeSinceLastSpeechSeconds / 60} minute(s). ` +
+												`Will auto-leave in ${remainingMinutes} more minute(s) without speech.`
 											);
 										}
 									}

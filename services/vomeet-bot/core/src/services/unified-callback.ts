@@ -13,7 +13,8 @@ export type CompletionReason =
 	| "left_alone"
 	| "evicted"
 	| "removed_by_admin"
-	| "admission_rejected_by_admin";
+	| "admission_rejected_by_admin"
+	| "idle_after_scheduled_end";
 
 export type FailureStage = "requested" | "joining" | "active";
 
@@ -183,6 +184,7 @@ export function mapExitReasonToStatus(
 			case "self_initiated_leave":
 				return { status: "completed", completionReason: "stopped" };
 			case "left_alone":
+			case "left_alone_timeout":
 				return { status: "completed", completionReason: "left_alone" };
 			case "evicted":
 				return { status: "completed", completionReason: "evicted" };
@@ -192,6 +194,11 @@ export function mapExitReasonToStatus(
 				return {
 					status: "completed",
 					completionReason: "admission_rejected_by_admin",
+				};
+			case "idle_after_scheduled_end":
+				return {
+					status: "completed",
+					completionReason: "idle_after_scheduled_end",
 				};
 			default:
 				return { status: "completed", completionReason: "stopped" };

@@ -13,8 +13,12 @@ export type BotConfig = {
 		waitingRoomTimeout: number;
 		noOneJoinedTimeout: number;
 		everyoneLeftTimeout: number;
+		/** Idle timeout after scheduled end time in milliseconds (default: 15 minutes = 900000ms) */
+		idleAfterScheduledEndTimeout?: number;
 	};
 	reconnectionIntervalMs?: number;
 	meeting_id: number; // Required, not optional
 	botManagerCallbackUrl?: string;
+	/** Scheduled end time of the meeting as ISO 8601 string or Unix timestamp in milliseconds */
+	scheduledEndTime?: string | number | null;
 };
