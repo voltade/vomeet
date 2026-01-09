@@ -75,6 +75,7 @@ async def startup_event():
     if ENABLE_AUTO_JOIN_SCHEDULER:
         try:
             from scheduler import setup_scheduler
+
             setup_scheduler()
             logger.info("Auto-join scheduler initialized")
         except Exception as e:
@@ -157,6 +158,24 @@ def extract_meet_code(text: Optional[str]) -> Optional[str]:
     match = re.search(pattern, text.lower())
     if match:
         return match.group(1)
+    return None
+
+
+def extract_teams_link(text: Optional[str]) -> Optional[str]:
+    """Extract Microsoft Teams meeting link from text."""
+    if not text:
+        return None
+    # Teams links can be in various formats:
+    # - https://teams.microsoft.com/l/meetup-join/...
+    # - https://teams.live.com/meet/...
+    patterns = [
+        r'(https://teams\.microsoft\.com/l/meetup-join/[^\s<>"]+)',
+        r'(https://teams\.live\.com/meet/[^\s<>"]+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
     return None
 
 
@@ -253,7 +272,9 @@ async def refresh_account_user_token(
             integration.refresh_token = token_data["refresh_token"]
         if "expires_in" in token_data:
             # Strip timezone for naive TIMESTAMP column (stored as UTC)
-            integration.token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])).replace(tzinfo=None)
+            integration.token_expires_at = (
+                datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])
+            ).replace(tzinfo=None)
         await db.commit()
 
         return integration.access_token
@@ -468,7 +489,9 @@ async def google_calendar_oauth_callback(
     token_expires_at = None
     if "expires_in" in token_data:
         # Strip timezone for naive TIMESTAMP column (stored as UTC)
-        token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])).replace(tzinfo=None)
+        token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])).replace(
+            tzinfo=None
+        )
 
     if integration:
         # Update existing integration
@@ -770,7 +793,9 @@ async def get_user_calendar_events(
             continue
 
         meet_link = None
+        teams_link = None
         native_meeting_id = None
+        meeting_platform = None
 
         conference_data = item.get("conferenceData", {})
         for entry_point in conference_data.get("entryPoints", []):
@@ -779,17 +804,36 @@ async def get_user_calendar_events(
                 if "meet.google.com" in uri:
                     meet_link = uri
                     native_meeting_id = extract_meet_code(uri)
+                    meeting_platform = "google_meet"
+                    break
+                elif "teams.microsoft.com" in uri or "teams.live.com" in uri:
+                    teams_link = uri
+                    meeting_platform = "teams"
                     break
 
-        if not meet_link:
+        # Fallback: check location and description for Google Meet
+        if not meet_link and not teams_link:
             meet_link_from_location = extract_meet_code(item.get("location", ""))
             meet_link_from_desc = extract_meet_code(item.get("description", ""))
             if meet_link_from_location:
                 native_meeting_id = meet_link_from_location
                 meet_link = f"https://meet.google.com/{meet_link_from_location}"
+                meeting_platform = "google_meet"
             elif meet_link_from_desc:
                 native_meeting_id = meet_link_from_desc
                 meet_link = f"https://meet.google.com/{meet_link_from_desc}"
+                meeting_platform = "google_meet"
+
+        # Fallback: check location and description for MS Teams
+        if not teams_link and not meet_link:
+            teams_from_location = extract_teams_link(item.get("location", ""))
+            teams_from_desc = extract_teams_link(item.get("description", ""))
+            if teams_from_location:
+                teams_link = teams_from_location
+                meeting_platform = "teams"
+            elif teams_from_desc:
+                teams_link = teams_from_desc
+                meeting_platform = "teams"
 
         start = item.get("start", {})
         end = item.get("end", {})
@@ -840,7 +884,9 @@ async def get_user_calendar_events(
                 start_time=start_dt,
                 end_time=end_dt,
                 google_meet_link=meet_link,
+                teams_link=teams_link,
                 native_meeting_id=native_meeting_id,
+                meeting_platform=meeting_platform,
                 location=item.get("location"),
                 attendees=attendees,
                 organizer_email=item.get("organizer", {}).get("email"),
@@ -885,6 +931,45 @@ async def get_user_upcoming_google_meets(
         events=meet_events,
         next_page_token=None,
         total_count=len(meet_events),
+    )
+
+
+@app.get(
+    "/users/{external_user_id}/calendar/upcoming-meetings", response_model=CalendarEventsResponse, tags=["Calendar"]
+)
+async def get_user_upcoming_meetings(
+    external_user_id: str,
+    request: Request,
+    hours: int = 24,
+    platform: Optional[str] = Query(None, description="Filter by platform: google_meet, teams, or None for all"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get upcoming meetings (Google Meet, MS Teams, etc.) for a user.
+
+    - **hours**: Number of hours to look ahead (default: 24)
+    - **platform**: Optional filter by meeting platform (google_meet, teams)
+    """
+    all_events = await get_user_calendar_events(
+        external_user_id=external_user_id,
+        request=request,
+        time_min=datetime.now(timezone.utc),
+        time_max=datetime.now(timezone.utc) + timedelta(hours=hours),
+        max_results=100,
+        db=db,
+    )
+
+    # Filter events that have any meeting link
+    meeting_events = [e for e in all_events.events if e.google_meet_link or e.teams_link]
+
+    # Optionally filter by platform
+    if platform:
+        meeting_events = [e for e in meeting_events if e.meeting_platform == platform]
+
+    return CalendarEventsResponse(
+        events=meeting_events,
+        next_page_token=None,
+        total_count=len(meeting_events),
     )
 
 

@@ -1071,7 +1071,7 @@ class CalendarEventAttendee(BaseModel):
 
 
 class CalendarEvent(BaseModel):
-    """Calendar event with Google Meet information"""
+    """Calendar event with meeting information (Google Meet, MS Teams, etc.)"""
 
     id: str = Field(..., description="Google Calendar event ID")
     summary: Optional[str] = Field(None, description="Event title")
@@ -1079,7 +1079,9 @@ class CalendarEvent(BaseModel):
     start_time: datetime = Field(..., description="Event start time")
     end_time: datetime = Field(..., description="Event end time")
     google_meet_link: Optional[str] = Field(None, description="Google Meet URL if present")
-    native_meeting_id: Optional[str] = Field(None, description="Extracted Google Meet code (xxx-yyyy-zzz)")
+    teams_link: Optional[str] = Field(None, description="Microsoft Teams URL if present")
+    native_meeting_id: Optional[str] = Field(None, description="Extracted meeting code/ID")
+    meeting_platform: Optional[str] = Field(None, description="Detected platform: google_meet, teams, zoom, etc.")
     location: Optional[str] = Field(None, description="Event location")
     attendees: List[CalendarEventAttendee] = Field(default_factory=list)
     organizer_email: Optional[str] = None
