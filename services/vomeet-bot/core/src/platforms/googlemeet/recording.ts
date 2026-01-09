@@ -152,32 +152,41 @@ export async function startGoogleRecording(
 						"Starting Google Meet recording process with new services.",
 					);
 
-					// Find and create combined audio stream
-					audioService
-						.findMediaElements()
-						.then(async (mediaElements: HTMLMediaElement[]) => {
-							if (mediaElements.length === 0) {
-								reject(
-									new Error(
-										"[Google Meet BOT Error] No active media elements found after multiple retries. Ensure the Google Meet meeting media is playing.",
-									),
-								);
-								return;
-							}
+					// Wait a bit for media elements to initialize after admission, then start the chain
+					(async () => {
+						// Wait 2 seconds for media elements to initialize after admission
+						(window as any).logBot(
+							"Waiting 2 seconds for media elements to initialize after admission...",
+						);
+						await new Promise((resolve) => setTimeout(resolve, 2000));
 
-							// Create combined audio stream
-							return await audioService.createCombinedAudioStream(
-								mediaElements,
-							);
-						})
-						.then(async (combinedStream: MediaStream | undefined) => {
-							if (!combinedStream) {
-								reject(
-									new Error(
-										"[Google Meet BOT Error] Failed to create combined audio stream",
-									),
+						// Find and create combined audio stream with enhanced retry logic
+						// Use 10 retries with 3s delay = 30s total wait time
+						audioService
+							.findMediaElements(10, 3000)
+							.then(async (mediaElements: HTMLMediaElement[]) => {
+								if (mediaElements.length === 0) {
+									reject(
+										new Error(
+											"[Google Meet BOT Error] No active media elements found after multiple retries. Ensure the Google Meet meeting media is playing.",
+										),
+									);
+									return;
+								}
+
+								// Create combined audio stream
+								return await audioService.createCombinedAudioStream(
+									mediaElements,
 								);
-								return;
+							})
+							.then(async (combinedStream: MediaStream | undefined) => {
+								if (!combinedStream) {
+									reject(
+										new Error(
+											"[Google Meet BOT Error] Failed to create combined audio stream",
+										),
+									);
+									return;
 							}
 							// Initialize audio processor
 							return await audioService.initializeAudioProcessor(
@@ -1062,6 +1071,7 @@ export async function startGoogleRecording(
 						.catch((err: any) => {
 							reject(err);
 						});
+					})(); // Close async IIFE
 				} catch (error: any) {
 					return reject(new Error(`[Google Meet BOT Error] ${error.message}`));
 				}

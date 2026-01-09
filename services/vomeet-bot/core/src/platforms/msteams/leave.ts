@@ -1,7 +1,10 @@
 import type { Page } from "playwright";
 import type { BotConfig } from "../../types";
 import { callLeaveCallback, log } from "../../utils";
-import { teamsLeaveSelectors } from "./selectors";
+import {
+	teamsLeaveSelectors,
+	teamsPrimaryHangupButtonSelector,
+} from "./selectors";
 
 // Prepare for recording by exposing necessary functions
 export async function prepareForRecording(
@@ -157,6 +160,47 @@ export async function leaveMicrosoftTeams(
 	}
 
 	try {
+		// First, try using Playwright's native click method for the most reliable selector
+		log(
+			"[leaveMicrosoftTeams] Attempting to click leave button using Playwright's native click...",
+		);
+
+		// Try the most reliable selector first: primary hangup button
+		try {
+			const hangupButton = page.locator(teamsPrimaryHangupButtonSelector);
+			const isVisible = await hangupButton
+				.isVisible({ timeout: 2000 })
+				.catch(() => false);
+
+			if (isVisible) {
+				log(
+					`[leaveMicrosoftTeams] Found ${teamsPrimaryHangupButtonSelector}, clicking with Playwright...`,
+				);
+				await hangupButton.click({ timeout: 5000 });
+				log(
+					`[leaveMicrosoftTeams] Successfully clicked ${teamsPrimaryHangupButtonSelector} using Playwright`,
+				);
+
+				// Wait for Teams to process the leave
+				log(
+					"[leaveMicrosoftTeams] Waiting 3 seconds for Teams to process leave...",
+				);
+				await new Promise((resolve) => setTimeout(resolve, 3000));
+				log(
+					"[leaveMicrosoftTeams] Wait complete. Teams should have processed the leave action.",
+				);
+				return true;
+			}
+		} catch (hangupError: any) {
+			log(
+				`[leaveMicrosoftTeams] Could not click ${teamsPrimaryHangupButtonSelector} with Playwright: ${hangupError.message}`,
+			);
+		}
+
+		// Fallback to browser-side click method for other selectors
+		log(
+			"[leaveMicrosoftTeams] Falling back to browser-side click method...",
+		);
 		const result = await page.evaluate(async () => {
 			if (typeof (window as any).performLeaveAction === "function") {
 				return await (window as any).performLeaveAction();
@@ -171,7 +215,20 @@ export async function leaveMicrosoftTeams(
 			}
 		});
 		log(`[leaveMicrosoftTeams] Browser leave action result: ${result}`);
-		return result;
+
+		// Wait a bit after clicking leave to allow Teams to process the leave action
+		if (result === true) {
+			log(
+				"[leaveMicrosoftTeams] Leave button clicked successfully. Waiting 3 seconds for Teams to process leave...",
+			);
+			await new Promise((resolve) => setTimeout(resolve, 3000));
+			log(
+				"[leaveMicrosoftTeams] Wait complete. Teams should have processed the leave action.",
+			);
+		}
+
+		// Ensure we return a boolean, not undefined
+		return result === true;
 	} catch (error: any) {
 		log(
 			`[leaveMicrosoftTeams] Error calling performLeaveAction in browser: ${error.message}`,
