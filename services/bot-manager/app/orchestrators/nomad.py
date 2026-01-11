@@ -26,8 +26,7 @@ logger = logging.getLogger("bot_manager.nomad_utils")
 NOMAD_AGENT_IP = os.getenv("NOMAD_IP_http")
 if not NOMAD_AGENT_IP:
     raise RuntimeError(
-        "NOMAD_IP_http environment variable not set. "
-        "This is required for the bot-manager to connect to the Nomad API."
+        "NOMAD_IP_http environment variable not set. This is required for the bot-manager to connect to the Nomad API."
     )
 NOMAD_ADDR = os.getenv("NOMAD_ADDR", f"http://{NOMAD_AGENT_IP}:4646").rstrip("/")
 
@@ -91,12 +90,20 @@ async def start_bot_container(
         )
         return None, None
 
+    # Ensure "Voltade Envoy" is always in the bot name
+    if not bot_name:
+        final_bot_name = "Voltade Envoy"
+    elif "Voltade Envoy" not in bot_name:
+        final_bot_name = f"Voltade Envoy - {bot_name}"
+    else:
+        final_bot_name = bot_name
+
     meta: Dict[str, str] = {
         "user_id": str(user_id),
         "meeting_id": str(meeting_id),
         "meeting_url": meeting_url or "",
         "platform": platform,
-        "bot_name": bot_name or "",
+        "bot_name": final_bot_name,
         "user_token": meeting_token,  # MeetingToken (HS256 JWT)
         "native_meeting_id": native_meeting_id,
         "connection_id": connection_id,
@@ -110,9 +117,7 @@ async def start_bot_container(
     # According to Nomad docs, metadata can be supplied in JSON body.
     payload = {"Meta": meta}
 
-    logger.info(
-        f"Dispatching Nomad job '{BOT_JOB_NAME}' for meeting {meeting_id} with meta {meta} -> {url}"
-    )
+    logger.info(f"Dispatching Nomad job '{BOT_JOB_NAME}' for meeting {meeting_id} with meta {meta} -> {url}")
 
     try:
         async with httpx.AsyncClient() as client:
@@ -173,9 +178,7 @@ def stop_bot_container(container_id: str) -> bool:
             logger.info(f"Successfully stopped allocation {container_id}")
             return True
         if resp.status_code == 404:
-            logger.warning(
-                f"Allocation {container_id} not found as allocation. Falling back to job deregister."
-            )
+            logger.warning(f"Allocation {container_id} not found as allocation. Falling back to job deregister.")
         else:
             logger.warning(
                 f"Allocation stop returned HTTP {resp.status_code}. Falling back to job deregister for {container_id}."
@@ -186,18 +189,12 @@ def stop_bot_container(container_id: str) -> bool:
             job_url = f"{NOMAD_ADDR}/v1/job/{container_id}/deregister?purge=true"
             job_resp = requests.post(job_url, timeout=10)
             if job_resp.status_code in (200, 202, 404):
-                logger.info(
-                    f"Job deregister fallback for {container_id} returned HTTP {job_resp.status_code}."
-                )
+                logger.info(f"Job deregister fallback for {container_id} returned HTTP {job_resp.status_code}.")
                 return True
-            logger.error(
-                f"Job deregister fallback failed for {container_id}: HTTP {job_resp.status_code}"
-            )
+            logger.error(f"Job deregister fallback failed for {container_id}: HTTP {job_resp.status_code}")
             return False
         except Exception as e:
-            logger.error(
-                f"Error during job deregister fallback for {container_id}: {e}"
-            )
+            logger.error(f"Error during job deregister fallback for {container_id}: {e}")
             return False
 
     except Exception as e:
@@ -286,9 +283,7 @@ async def get_running_bots_status(user_id: int) -> List[Dict[str, Any]]:
                         logger.debug(f"Found running bot: {bot_status}")
 
                 except Exception as detail_error:
-                    logger.warning(
-                        f"Failed to get details for job {job_id}: {detail_error}"
-                    )
+                    logger.warning(f"Failed to get details for job {job_id}: {detail_error}")
                     continue
 
             logger.info(f"Found {len(running_bots)} running bots for user {user_id}")
@@ -325,18 +320,14 @@ async def verify_container_running(container_id: str) -> bool:
             client_status = allocation_data.get("ClientStatus", "")
             is_running = client_status in ["running", "pending"]
 
-            logger.debug(
-                f"Allocation {container_id} client status: {client_status}, running: {is_running}"
-            )
+            logger.debug(f"Allocation {container_id} client status: {client_status}, running: {is_running}")
             return is_running
 
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             logger.debug(f"Allocation {container_id} not found (404), not running")
             return False
-        logger.warning(
-            f"HTTP {e.response.status_code} error checking allocation {container_id}: {e}"
-        )
+        logger.warning(f"HTTP {e.response.status_code} error checking allocation {container_id}: {e}")
         return False
     except httpx.HTTPError as e:
         logger.warning(f"HTTP error checking allocation {container_id}: {e}")

@@ -127,11 +127,19 @@ async def start_bot_container(
         return None, None
 
     # Construct BOT_CONFIG JSON
+    # Ensure "Voltade Envoy" is always in the bot name
+    if not bot_name:
+        final_bot_name = "Voltade Envoy"
+    elif "Voltade Envoy" not in bot_name:
+        final_bot_name = f"Voltade Envoy - {bot_name}"
+    else:
+        final_bot_name = bot_name
+
     bot_config_data = {
         "meeting_id": meeting_id,
         "platform": platform,
         "meetingUrl": meeting_url,
-        "botName": bot_name or "Voltade Meeting Assistant",
+        "botName": final_bot_name,
         "token": meeting_token,
         "nativeMeetingId": native_meeting_id,
         "connectionId": connection_id,

@@ -195,8 +195,11 @@ async def start_bot_container(
         return None, None
 
     container_name = f"vomeet-bot-{meeting_id}-{uuid.uuid4().hex[:8]}"
+    # Ensure "Voltade Envoy" is always in the bot name
     if not bot_name:
-        bot_name = "Voltade Meeting Assistant"
+        bot_name = "Voltade Envoy"
+    elif "Voltade Envoy" not in bot_name:
+        bot_name = f"Voltade Envoy - {bot_name}"
     connection_id = str(uuid.uuid4())
     logger.info(f"Generated unique connectionId for bot session: {connection_id}")
 
