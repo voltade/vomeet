@@ -9,10 +9,11 @@ export type MeetingStatus =
 
 export type CompletionReason =
 	| "stopped"
-	| "validation_error"
 	| "awaiting_admission_timeout"
-	| "awaiting_admission_rejected"
 	| "left_alone"
+	| "evicted"
+	| "removed_by_admin"
+	| "admission_rejected_by_admin"
 	| "idle_after_scheduled_end";
 
 export type FailureStage = "requested" | "joining" | "active";
@@ -186,12 +187,13 @@ export function mapExitReasonToStatus(
 			case "left_alone_timeout":
 				return { status: "completed", completionReason: "left_alone" };
 			case "evicted":
+				return { status: "completed", completionReason: "evicted" };
 			case "removed_by_admin":
-				return { status: "completed", completionReason: "stopped" };
+				return { status: "completed", completionReason: "removed_by_admin" };
 			case "admission_rejected_by_admin":
 				return {
 					status: "completed",
-					completionReason: "awaiting_admission_rejected",
+					completionReason: "admission_rejected_by_admin",
 				};
 			case "idle_after_scheduled_end":
 				return {
