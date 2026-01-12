@@ -1007,7 +1007,7 @@ async def get_user_upcoming_meetings(
 # --- Push Notification Webhook ---
 
 
-@app.post("/google/calendar/webhook", tags=["Push Notifications"])
+@app.post("/calendar/webhook", tags=["Push Notifications"])
 async def calendar_push_notification(
     request: Request,
     db: AsyncSession = Depends(get_db),
