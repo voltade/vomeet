@@ -49,7 +49,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres
 
 # Auto-join timing configuration
 AUTO_JOIN_MINUTES_BEFORE = int(os.getenv("AUTO_JOIN_MINUTES_BEFORE", "2"))  # Join X minutes before meeting starts
-AUTO_JOIN_CHECK_INTERVAL = int(os.getenv("AUTO_JOIN_CHECK_INTERVAL", "60"))  # Check every 60 seconds
+# Increased default check interval since push notifications handle most updates
+# This now serves as a fallback and for channel renewal checks
+AUTO_JOIN_CHECK_INTERVAL = int(os.getenv("AUTO_JOIN_CHECK_INTERVAL", "900"))  # Check every 15 minutes (was 60s)
 
 # Google Calendar API
 GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3"
@@ -469,12 +471,145 @@ def process_auto_join_for_user(
                 send_webhook(webhook_url, webhook_secret, "meeting.created", webhook_payload)
 
 
+def renew_channel_for_user(integration_id: int, account_id: int):
+    """
+    Renew a push notification channel for a user.
+    This function is enqueued as an RQ job.
+    """
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+
+    logger.info(f"Renewing push notification channel for integration {integration_id}")
+
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=int(DB_PORT),
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+    )
+
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get integration and account details
+            cur.execute(
+                """
+                SELECT 
+                    augi.id,
+                    augi.account_user_id,
+                    augi.access_token,
+                    augi.refresh_token,
+                    augi.channel_id,
+                    augi.resource_id,
+                    a.google_client_id,
+                    a.google_client_secret
+                FROM account_user_google_integrations augi
+                JOIN account_users au ON au.id = augi.account_user_id
+                JOIN accounts a ON a.id = au.account_id
+                WHERE augi.id = %s AND a.id = %s
+            """,
+                (integration_id, account_id),
+            )
+
+            integration = cur.fetchone()
+
+            if not integration:
+                logger.warning(f"Integration {integration_id} not found")
+                return
+
+            # Refresh access token if needed
+            access_token = integration["access_token"]
+            if integration["refresh_token"]:
+                refreshed_token = refresh_token_sync(
+                    integration["refresh_token"], integration["google_client_id"], integration["google_client_secret"]
+                )
+                if refreshed_token:
+                    access_token = refreshed_token
+
+            # Stop old channel
+            if integration["channel_id"] and integration["resource_id"]:
+                with httpx.Client() as client:
+                    try:
+                        client.post(
+                            f"{GOOGLE_CALENDAR_API}/channels/stop",
+                            headers={"Authorization": f"Bearer {access_token}"},
+                            json={
+                                "id": integration["channel_id"],
+                                "resourceId": integration["resource_id"],
+                            },
+                            timeout=30.0,
+                        )
+                        logger.info(f"Stopped old channel {integration['channel_id']}")
+                    except Exception as e:
+                        logger.warning(f"Failed to stop old channel: {e}")
+
+            # Create new channel with verification token
+            import secrets
+
+            new_channel_id = secrets.token_urlsafe(32)[:64]
+            new_channel_token = secrets.token_urlsafe(48)[:256]  # Security token
+            expiration = datetime.now(timezone.utc) + timedelta(days=6)
+            expiration_ms = int(expiration.timestamp() * 1000)
+
+            webhook_url = os.getenv("WEBHOOK_BASE_URL", "https://vomeet.io")
+            watch_body = {
+                "id": new_channel_id,
+                "type": "web_hook",
+                "address": f"{webhook_url}/google/calendar/webhook",
+                "token": new_channel_token,  # Verification token
+                "expiration": expiration_ms,
+            }
+
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{GOOGLE_CALENDAR_API}/calendars/primary/events/watch",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    json=watch_body,
+                    timeout=30.0,
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    resource_id = data.get("resourceId")
+
+                    # Update database with new channel info including token
+                    cur.execute(
+                        """
+                        UPDATE account_user_google_integrations
+                        SET channel_id = %s,
+                            channel_token = %s,
+                            resource_id = %s,
+                            channel_expires_at = %s,
+                            access_token = %s
+                        WHERE id = %s
+                    """,
+                        (new_channel_id, new_channel_token, resource_id, expiration, access_token, integration_id),
+                    )
+                    conn.commit()
+
+                    logger.info(
+                        f"Successfully renewed push notification channel for integration {integration_id}, "
+                        f"new channel: {new_channel_id}, expires: {expiration}"
+                    )
+                else:
+                    logger.error(f"Failed to create new channel: {response.status_code} - {response.text}")
+
+    except Exception as e:
+        logger.error(f"Error renewing channel for integration {integration_id}: {e}")
+    finally:
+        conn.close()
+
+
 def check_and_enqueue_auto_joins():
     """
     Main scheduler job that checks all users with auto_join_enabled
     and enqueues individual auto-join jobs.
 
-    This runs periodically via rq-scheduler.
+    This runs periodically via rq-scheduler as a fallback to push notifications.
+    With push notifications enabled, this serves as:
+    1. Backup for missed notifications
+    2. Handles users whose channels may have expired
+    3. Pre-meeting checks for imminent meetings
     """
     import psycopg2
     from psycopg2.extras import RealDictCursor
@@ -502,6 +637,8 @@ def check_and_enqueue_auto_joins():
                     augi.refresh_token,
                     augi.bot_name,
                     augi.auto_join_mode,
+                    augi.channel_id,
+                    augi.channel_expires_at,
                     au.external_user_id,
                     au.account_id,
                     a.api_key,
@@ -521,6 +658,34 @@ def check_and_enqueue_auto_joins():
 
             users = cur.fetchall()
             logger.info(f"Found {len(users)} users with auto-join enabled")
+
+            # Check for expiring push notification channels and renew them
+            now = datetime.now(timezone.utc)
+            renewal_threshold = now + timedelta(hours=12)  # Renew if expiring in next 12 hours
+
+            for user in users:
+                channel_expires_at = user.get("channel_expires_at")
+
+                # Check if channel needs renewal
+                if channel_expires_at:
+                    if isinstance(channel_expires_at, str):
+                        channel_expires_at = datetime.fromisoformat(channel_expires_at)
+
+                    # Make timezone aware if needed
+                    if channel_expires_at.tzinfo is None:
+                        channel_expires_at = channel_expires_at.replace(tzinfo=timezone.utc)
+
+                    if channel_expires_at < renewal_threshold:
+                        logger.info(
+                            f"Push notification channel for account_user {user['account_user_id']} "
+                            f"expires at {channel_expires_at}, enqueuing renewal"
+                        )
+                        queue.enqueue(
+                            "scheduler.renew_channel_for_user",
+                            integration_id=user["integration_id"],
+                            account_id=user["account_id"],
+                            job_timeout=60,
+                        )
 
             for user in users:
                 logger.info(

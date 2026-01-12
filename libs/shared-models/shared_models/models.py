@@ -291,6 +291,14 @@ class AccountUserGoogleIntegration(Base):
     auto_join_enabled = Column(sqlalchemy.Boolean, nullable=False, default=False)
     bot_name = Column(String(100), nullable=True, default="Notetaker")  # Name shown in meeting
     auto_join_mode = Column(String(50), nullable=False, default="all_events")  # "all_events" or "my_events_only"
+
+    # Push notification channel fields
+    channel_id = Column(String(64), nullable=True)  # UUID identifying the push notification channel
+    channel_token = Column(String(256), nullable=True)  # Verification token for webhook security
+    resource_id = Column(String(255), nullable=True)  # Opaque ID from Google for the watched resource
+    channel_expires_at = Column(DateTime, nullable=True)  # When the push notification channel expires
+    sync_token = Column(Text, nullable=True)  # Token for incremental sync
+
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

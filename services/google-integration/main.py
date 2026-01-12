@@ -98,6 +98,10 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
 ]
 
+# Push notification configuration
+WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "https://vomeet.io")  # Your public-facing URL
+CHANNEL_EXPIRATION_DAYS = 6  # Google allows max 7 days, renew at 6 to be safe
+
 # State token expiry (10 minutes)
 STATE_EXPIRY_SECONDS = 600
 
@@ -531,6 +535,10 @@ async def google_calendar_oauth_callback(
 
     logger.info(f"Google Calendar connected for account_user {account_user.id}: {integration.email}")
 
+    # Create push notification channel if auto-join is enabled
+    if integration.auto_join_enabled:
+        await create_push_notification_channel(integration, account, db)
+
     # Redirect to success URL
     if success_url:
         params = urlencode(
@@ -655,6 +663,9 @@ async def update_user_google_integration_settings(
     if not integration:
         raise HTTPException(status_code=404, detail="Google integration not found. Please connect first.")
 
+    # Track if auto_join_enabled changed
+    old_auto_join_enabled = integration.auto_join_enabled
+
     if update.auto_join_enabled is not None:
         integration.auto_join_enabled = update.auto_join_enabled
     if update.bot_name is not None:
@@ -666,6 +677,22 @@ async def update_user_google_integration_settings(
 
     await db.commit()
     await db.refresh(integration)
+
+    # Manage push notification channel based on auto_join_enabled
+    if update.auto_join_enabled is not None and update.auto_join_enabled != old_auto_join_enabled:
+        if integration.auto_join_enabled:
+            # Enable: create push notification channel
+            logger.info(f"Auto-join enabled for account_user {account_user.id}, creating push notification channel")
+            await create_push_notification_channel(integration, account, db)
+        else:
+            # Disable: stop push notification channel
+            logger.info(f"Auto-join disabled for account_user {account_user.id}, stopping push notification channel")
+            await stop_push_notification_channel(integration, integration.access_token)
+            integration.channel_id = None
+            integration.channel_token = None
+            integration.resource_id = None
+            integration.channel_expires_at = None
+            await db.commit()
 
     return AccountUserGoogleIntegrationResponse.model_validate(integration)
 
@@ -697,6 +724,10 @@ async def disconnect_user_google_integration(
 
     if not integration:
         raise HTTPException(status_code=404, detail="Google integration not found")
+
+    # Stop push notification channel before deleting
+    if integration.channel_id and integration.resource_id:
+        await stop_push_notification_channel(integration, integration.access_token)
 
     await db.delete(integration)
     await db.commit()
@@ -971,6 +1002,224 @@ async def get_user_upcoming_meetings(
         next_page_token=None,
         total_count=len(meeting_events),
     )
+
+
+# --- Push Notification Webhook ---
+
+
+@app.post("/google/calendar/webhook", tags=["Push Notifications"])
+async def calendar_push_notification(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Receive push notifications from Google Calendar API.
+
+    Google sends notifications when calendar events change.
+    We use this to trigger immediate checks for upcoming meetings.
+    """
+    # Extract Google's notification headers
+    channel_id = request.headers.get("X-Goog-Channel-ID")
+    channel_token = request.headers.get("X-Goog-Channel-Token")
+    resource_state = request.headers.get("X-Goog-Resource-State")
+    resource_id = request.headers.get("X-Goog-Resource-ID")
+    message_number = request.headers.get("X-Goog-Message-Number")
+
+    logger.info(
+        f"Received push notification: channel_id={channel_id}, "
+        f"state={resource_state}, resource_id={resource_id}, msg={message_number}"
+    )
+
+    # Handle sync message (sent when channel is first created)
+    if resource_state == "sync":
+        logger.info(f"Received sync message for channel {channel_id}")
+        return {"status": "ok", "message": "sync acknowledged"}
+
+    # Handle event change notification
+    if resource_state in ["exists", "not_exists"]:
+        # Find the integration associated with this channel
+        stmt = select(AccountUserGoogleIntegration).where(AccountUserGoogleIntegration.channel_id == channel_id)
+        result = await db.execute(stmt)
+        integration = result.scalar_one_or_none()
+
+        if not integration:
+            logger.warning(f"No integration found for channel_id={channel_id}")
+            return {"status": "ok", "message": "channel not found"}
+
+        # Verify channel token to prevent spoofed notifications
+        if integration.channel_token and integration.channel_token != channel_token:
+            logger.warning(
+                f"Channel token mismatch for channel {channel_id}: "
+                f"expected {integration.channel_token}, got {channel_token}"
+            )
+            raise HTTPException(status_code=401, detail="Invalid channel token")
+
+        logger.info(f"Calendar changed for account_user {integration.account_user_id}, triggering auto-join check")
+
+        # Import here to avoid circular dependency
+        if ENABLE_AUTO_JOIN_SCHEDULER:
+            try:
+                from scheduler import process_auto_join_for_user, get_queue
+
+                # Get user and account info
+                stmt = (
+                    select(AccountUser, Account)
+                    .join(Account, AccountUser.account_id == Account.id)
+                    .where(AccountUser.id == integration.account_user_id)
+                )
+                result = await db.execute(stmt)
+                user_account = result.one_or_none()
+
+                if user_account:
+                    account_user, account = user_account
+                    queue = get_queue()
+
+                    # Enqueue immediate check for this user
+                    queue.enqueue(
+                        "scheduler.process_auto_join_for_user",
+                        account_user_id=account_user.id,
+                        account_id=account.id,
+                        external_user_id=account_user.external_user_id,
+                        refresh_token=integration.refresh_token,
+                        client_id=account.google_client_id,
+                        client_secret=account.google_client_secret,
+                        api_key=account.api_key,
+                        bot_name=integration.bot_name,
+                        auto_join_mode=integration.auto_join_mode,
+                        webhook_url=account.webhook_url,
+                        webhook_secret=account.webhook_secret,
+                        job_timeout=120,
+                    )
+                    logger.info(f"Enqueued auto-join check for account_user {account_user.id}")
+            except Exception as e:
+                logger.error(f"Failed to enqueue auto-join check: {e}")
+
+    return {"status": "ok", "message": "notification received"}
+
+
+async def create_push_notification_channel(
+    integration: AccountUserGoogleIntegration,
+    account: Account,
+    db: AsyncSession,
+) -> bool:
+    """
+    Create a push notification channel for a user's calendar.
+
+    Returns True if successful, False otherwise.
+    """
+    try:
+        # Generate unique channel ID and verification token
+        channel_id = secrets.token_urlsafe(32)[:64]
+        channel_token = secrets.token_urlsafe(48)[:256]  # Secure verification token
+
+        # Calculate expiration (6 days from now)
+        expiration = datetime.now(timezone.utc) + timedelta(days=CHANNEL_EXPIRATION_DAYS)
+        expiration_ms = int(expiration.timestamp() * 1000)
+
+        # Webhook URL that Google will call
+        webhook_url = f"{WEBHOOK_BASE_URL}/google/calendar/webhook"
+
+        # Create watch request with verification token
+        watch_body = {
+            "id": channel_id,
+            "type": "web_hook",
+            "address": webhook_url,
+            "token": channel_token,  # Security: verify webhook authenticity
+            "expiration": expiration_ms,
+        }
+
+        logger.info(f"Creating push notification channel for account_user {integration.account_user_id}")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{GOOGLE_CALENDAR_API}/calendars/primary/events/watch",
+                headers={"Authorization": f"Bearer {integration.access_token}"},
+                json=watch_body,
+                timeout=30.0,
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Failed to create watch channel: {response.status_code} - {response.text}")
+                return False
+
+            data = response.json()
+            resource_id = data.get("resourceId")
+
+            # Update integration with channel info
+            integration.channel_id = channel_id
+            integration.channel_token = channel_token
+            integration.resource_id = resource_id
+            integration.channel_expires_at = expiration
+            await db.commit()
+
+            logger.info(
+                f"Successfully created push notification channel {channel_id} "
+                f"for account_user {integration.account_user_id}, expires at {expiration}"
+            )
+            return True
+
+    except Exception as e:
+        logger.error(f"Error creating push notification channel: {e}")
+        return False
+
+
+async def stop_push_notification_channel(
+    integration: AccountUserGoogleIntegration,
+    access_token: str,
+) -> bool:
+    """
+    Stop a push notification channel.
+
+    Returns True if successful or channel doesn't exist, False on error.
+    """
+    if not integration.channel_id or not integration.resource_id:
+        return True
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{GOOGLE_CALENDAR_API}/channels/stop",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={
+                    "id": integration.channel_id,
+                    "resourceId": integration.resource_id,
+                },
+                timeout=30.0,
+            )
+
+            # 200-299 is success, 404 means channel already expired/stopped
+            if response.status_code < 300 or response.status_code == 404:
+                logger.info(f"Stopped push notification channel {integration.channel_id}")
+                return True
+            else:
+                logger.warning(
+                    f"Failed to stop channel {integration.channel_id}: {response.status_code} - {response.text}"
+                )
+                return False
+
+    except Exception as e:
+        logger.error(f"Error stopping push notification channel: {e}")
+        return False
+
+
+async def renew_push_notification_channel(
+    integration: AccountUserGoogleIntegration,
+    account: Account,
+    db: AsyncSession,
+) -> bool:
+    """
+    Renew a push notification channel by stopping the old one and creating a new one.
+
+    Returns True if successful, False otherwise.
+    """
+    logger.info(f"Renewing push notification channel for account_user {integration.account_user_id}")
+
+    # Stop the old channel (if it exists)
+    if integration.channel_id and integration.resource_id:
+        await stop_push_notification_channel(integration, integration.access_token)
+
+    # Create a new channel
+    return await create_push_notification_channel(integration, account, db)
 
 
 # --- Main Execution ---
