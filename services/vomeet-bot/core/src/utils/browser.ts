@@ -32,13 +32,29 @@ export class BrowserAudioService {
 	}
 
 	async findMediaElements(
-		retries: number = 5,
+		retries: number = 15,
 		delay: number = 2000,
 	): Promise<HTMLMediaElement[]> {
 		for (let i = 0; i < retries; i++) {
-			const mediaElements = Array.from(
+			// Debug: Log all audio/video elements found
+			const allMediaElements = Array.from(
 				document.querySelectorAll("audio, video"),
-			).filter(
+			);
+			(window as any).logBot(
+				`[Audio Debug] Attempt ${i + 1}/${retries}: Found ${allMediaElements.length} total audio/video elements`,
+			);
+
+			// Log details about each element
+			allMediaElements.forEach((el: any, idx: number) => {
+				const hasSrcObject = el.srcObject !== null && el.srcObject !== undefined;
+				const isMediaStream = el.srcObject instanceof MediaStream;
+				const audioTracksCount = isMediaStream ? el.srcObject.getAudioTracks().length : 0;
+				(window as any).logBot(
+					`[Audio Debug]   Element ${idx + 1}: tag=${el.tagName}, hasSrcObject=${hasSrcObject}, isMediaStream=${isMediaStream}, audioTracks=${audioTracksCount}`,
+				);
+			});
+
+			const mediaElements = allMediaElements.filter(
 				(el: any) =>
 					el.srcObject instanceof MediaStream &&
 					el.srcObject.getAudioTracks().length > 0,
@@ -46,7 +62,7 @@ export class BrowserAudioService {
 
 			if (mediaElements.length > 0) {
 				(window as any).logBot(
-					`Found ${mediaElements.length} active media elements with audio tracks after ${i + 1} attempt(s).`,
+					`✅ Found ${mediaElements.length} active media elements with audio tracks after ${i + 1} attempt(s).`,
 				);
 				return mediaElements;
 			}
@@ -55,6 +71,9 @@ export class BrowserAudioService {
 			);
 			await new Promise((resolve) => setTimeout(resolve, delay));
 		}
+		(window as any).logBot(
+			`❌ Failed to find media elements after ${retries} attempts (${retries * delay / 1000}s total)`,
+		);
 		return [];
 	}
 

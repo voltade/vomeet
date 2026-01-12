@@ -152,24 +152,37 @@ export async function startGoogleRecording(
 						"Starting Google Meet recording process with new services.",
 					);
 
-					// Find and create combined audio stream
-					audioService
-						.findMediaElements()
-						.then(async (mediaElements: HTMLMediaElement[]) => {
-							if (mediaElements.length === 0) {
-								reject(
-									new Error(
-										"[Google Meet BOT Error] No active media elements found after multiple retries. Ensure the Google Meet meeting media is playing.",
-									),
-								);
-								return;
-							}
+					// Wait for Google Meet to fully initialize media streams
+					// Google Meet needs time to:
+					// 1. Load the meeting UI
+					// 2. Initialize WebRTC connections
+					// 3. Create audio/video elements with MediaStreams
+					(window as any).logBot(
+						"⏱️ Waiting 5 seconds for Google Meet to initialize media streams...",
+					);
+					setTimeout(() => {
+						(window as any).logBot(
+							"✅ Initial wait complete, now searching for media elements...",
+						);
 
-							// Create combined audio stream
-							return await audioService.createCombinedAudioStream(
-								mediaElements,
-							);
-						})
+						// Find and create combined audio stream
+						audioService
+							.findMediaElements()
+							.then(async (mediaElements: HTMLMediaElement[]) => {
+								if (mediaElements.length === 0) {
+									reject(
+										new Error(
+											"[Google Meet BOT Error] No active media elements found after multiple retries. Ensure the Google Meet meeting media is playing.",
+										),
+									);
+									return;
+								}
+
+								// Create combined audio stream
+								return await audioService.createCombinedAudioStream(
+									mediaElements,
+								);
+							})
 						.then(async (combinedStream: MediaStream | undefined) => {
 							if (!combinedStream) {
 								reject(
@@ -1089,6 +1102,7 @@ export async function startGoogleRecording(
 						.catch((err: any) => {
 							reject(err);
 						});
+					}, 5000); // Wait 5 seconds for Google Meet to initialize
 				} catch (error: any) {
 					return reject(new Error(`[Google Meet BOT Error] ${error.message}`));
 				}
