@@ -242,6 +242,7 @@ def get_upcoming_meets_sync(
             {
                 "event_id": item["id"],
                 "summary": item.get("summary", "Untitled Meeting"),
+                "description": item.get("description"),
                 "start_time": start_time,
                 "native_meeting_id": native_meeting_id,
                 "meet_link": meet_link,
@@ -425,6 +426,7 @@ def process_auto_join_for_user(
                     "calendar_event": {
                         "event_id": event["event_id"],
                         "title": event["summary"],
+                        "description": event.get("description"),
                         "scheduled_at": event_start_iso,
                         "previous_scheduled_at": previous_start_iso,
                         "is_creator_self": event.get("is_creator_self", False),
@@ -456,6 +458,7 @@ def process_auto_join_for_user(
                     "calendar_event": {
                         "event_id": event["event_id"],
                         "title": event["summary"],
+                        "description": event.get("description"),
                         "scheduled_at": event["start_time"].isoformat(),
                         "is_creator_self": event.get("is_creator_self", False),
                         "is_organizer_self": event.get("is_organizer_self", False),
