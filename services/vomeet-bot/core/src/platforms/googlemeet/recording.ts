@@ -758,8 +758,8 @@ export async function startGoogleRecording(
 										const label = btn.getAttribute('aria-label') || '';
 										const text = btn.textContent || '';
 										// Common UI action patterns to exclude
-										return /mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools/i.test(label) ||
-											   /mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools/i.test(text);
+										return /mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools|share screen/i.test(label) ||
+											   /mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools|share screen/i.test(text);
 									});
 									
 									if (hasActionButtons) {
@@ -770,11 +770,12 @@ export async function startGoogleRecording(
 									const nameSpans = item.querySelectorAll('span.notranslate');
 									nameSpans.forEach((span) => {
 										const text = (span.textContent || '').trim();
-										// Additional filters: avoid common UI text patterns
+										// Additional filters: avoid common UI text patterns and meeting ID patterns
 										if (text && 
 											text.length > 1 && 
 											text.length < 50 &&
-											!/^(devices|visitor|back|close|gemini|you can't|call ends soon)$/i.test(text)) {
+											!/^(devices|visitor|back|close|gemini|you can't|call ends soon|more actions|share screen)$/i.test(text) &&
+											!/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/i.test(text)) { // Filter out meeting IDs like "mqx-itbk-ftk"
 											participants.push(text);
 										}
 									});
@@ -785,11 +786,12 @@ export async function startGoogleRecording(
 								const tooltips = document.querySelectorAll('[role="tooltip"]');
 								tooltips.forEach((el: Element) => {
 									const text = (el.textContent || "").trim();
-									// Exclude common UI tooltips
+									// Exclude common UI tooltips and meeting ID patterns
 									if (text && 
 										text.length > 1 && 
 										text.length < 50 &&
-										!/mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools|devices|visitor|back|close|gemini|you can't|call ends|presenting/i.test(text)) {
+										!/mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools|devices|visitor|back|close|gemini|you can't|call ends|presenting|more actions|share screen/i.test(text) &&
+										!/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/i.test(text)) { // Filter out meeting IDs like "mqx-itbk-ftk"
 										participants.push(text);
 									}
 								});
