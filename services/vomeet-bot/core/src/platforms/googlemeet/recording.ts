@@ -734,20 +734,49 @@ export async function startGoogleRecording(
 								});
 								
 								// Method 3: Check the "In this call" panel if open
-								// Look for participant list items
-								const participantListItems = document.querySelectorAll('[role="listitem"] span.notranslate');
+								// Look for participant list items - be specific to avoid UI elements
+								// Only collect from elements that look like actual participant entries
+								const participantListItems = document.querySelectorAll('[role="listitem"]');
 								participantListItems.forEach((item) => {
-									const text = (item.textContent || '').trim();
-									if (text && text.length > 1 && text.length < 50) {
-										participants.push(text);
+									// Skip if this listitem contains interactive buttons or controls
+									// UI elements typically have aria-labels with actions like "Mute", "Pin", "More options"
+									const buttons = item.querySelectorAll('button, [role="button"]');
+									const hasActionButtons = Array.from(buttons).some((btn: Element) => {
+										const label = btn.getAttribute('aria-label') || '';
+										const text = btn.textContent || '';
+										// Common UI action patterns to exclude
+										return /mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools/i.test(label) ||
+											   /mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools/i.test(text);
+									});
+									
+									if (hasActionButtons) {
+										return; // Skip UI control listitems
 									}
+									
+									// Look for name spans in this listitem
+									const nameSpans = item.querySelectorAll('span.notranslate');
+									nameSpans.forEach((span) => {
+										const text = (span.textContent || '').trim();
+										// Additional filters: avoid common UI text patterns
+										if (text && 
+											text.length > 1 && 
+											text.length < 50 &&
+											!/^(devices|visitor|back|close|gemini|you can't|call ends soon)$/i.test(text)) {
+											participants.push(text);
+										}
+									});
 								});
 								
 								// Method 4: Look for video container labels/tooltips
+								// Be careful - tooltips can contain UI text, so filter carefully
 								const tooltips = document.querySelectorAll('[role="tooltip"]');
 								tooltips.forEach((el: Element) => {
 									const text = (el.textContent || "").trim();
-									if (text && text.length > 1 && text.length < 50) {
+									// Exclude common UI tooltips
+									if (text && 
+										text.length > 1 && 
+										text.length < 50 &&
+										!/mute|unmute|pin|more options|zoom|full screen|background|effects|remove|audio|video|show more|settings|reaction|caption|raise hand|leave|meeting|chat|people|tools|devices|visitor|back|close|gemini|you can't|call ends|presenting/i.test(text)) {
 										participants.push(text);
 									}
 								});
@@ -775,8 +804,6 @@ export async function startGoogleRecording(
 								}
 								return uniqueParticipants;
 							};
-
-							// Get participants excluding all detected bots (for alone detection)
 							const getHumanParticipants = (botName: string | undefined): string[] => {
 								const allParticipants = extractParticipantsFromMain(botName);
 								const humans = allParticipants.filter(p => !isLikelyBot(p));
