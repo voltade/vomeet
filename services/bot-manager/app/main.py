@@ -1108,6 +1108,226 @@ async def stop_bot(
     return {"message": "Stop request accepted and is being processed."}
 
 
+# --- Retry Failed Bot ---
+@app.post(
+    "/bots/{platform}/{native_meeting_id}/retry",
+    response_model=MeetingResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Retry a failed or completed bot",
+    description="Creates a new bot instance for a previously failed or completed meeting. "
+    "The original meeting configuration (bot name, language, task) will be reused if not provided.",
+    dependencies=[Depends(get_account_from_api_key)],
+)
+async def retry_bot(
+    platform: Platform,
+    native_meeting_id: str,
+    bot_name: Optional[str] = None,
+    language: Optional[str] = None,
+    task: Optional[str] = None,
+    account: Account = Depends(get_account_from_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retry a failed or completed meeting by creating a new bot instance.
+
+    Args:
+        platform: The meeting platform (google_meet, teams, zoom)
+        native_meeting_id: The platform-specific meeting ID
+        bot_name: Optional new bot name (defaults to previous bot name)
+        language: Optional language (defaults to previous language or 'en')
+        task: Optional task (defaults to previous task or 'transcribe')
+    """
+    logger.info(
+        f"Received retry request for platform '{platform.value}', native ID '{native_meeting_id}' from account {account.id}"
+    )
+
+    platform_value = platform.value
+
+    # Find the most recent meeting for this platform and native_meeting_id
+    existing_meeting_stmt = (
+        select(Meeting)
+        .where(
+            Meeting.account_id == account.id,
+            Meeting.platform == platform_value,
+            Meeting.platform_specific_id == native_meeting_id,
+        )
+        .order_by(desc(Meeting.created_at))
+        .limit(1)
+    )
+    result = await db.execute(existing_meeting_stmt)
+    previous_meeting = result.scalars().first()
+
+    if not previous_meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No previous meeting found for platform '{platform_value}' and meeting ID '{native_meeting_id}'",
+        )
+
+    # Check if the previous meeting is in failed state
+    if previous_meeting.status != "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot retry meeting in '{previous_meeting.status}' status. Only 'failed' meetings can be retried.",
+        )
+
+    # Extract previous config from meeting data
+    previous_data = previous_meeting.data or {}
+
+    # Use provided values or fall back to previous values
+    retry_bot_name = bot_name or previous_data.get("bot_name", "Voltade Envoy - Vomeet AI")
+    retry_language = language or previous_data.get("language", "en")
+    retry_task = task or previous_data.get("task", "transcribe")
+    passcode = previous_data.get("passcode")
+
+    # Construct meeting URL
+    constructed_url = Platform.construct_meeting_url(platform_value, native_meeting_id, passcode)
+    if not constructed_url:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Cannot construct meeting URL for platform '{platform_value}' and meeting ID '{native_meeting_id}'",
+        )
+
+    # Check concurrency limit
+    account_limit = account.max_concurrent_bots or 0
+    if account_limit > 0:
+        count_stmt = (
+            select(func.count())
+            .select_from(Meeting)
+            .where(
+                and_(
+                    Meeting.account_id == account.id,
+                    Meeting.status.in_(
+                        [
+                            MeetingStatus.REQUESTED.value,
+                            MeetingStatus.JOINING.value,
+                            MeetingStatus.AWAITING_ADMISSION.value,
+                            MeetingStatus.ACTIVE.value,
+                        ]
+                    ),
+                )
+            )
+        )
+        count_result = await db.execute(count_stmt)
+        active_count = int(count_result.scalar() or 0)
+        if active_count >= account_limit:
+            logger.warning(
+                f"Account {account.id} reached concurrent bot limit {active_count}/{account_limit}. Rejecting retry."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Account has reached the maximum concurrent bot limit ({account_limit}).",
+            )
+
+    # Create new Meeting record for the retry
+    meeting_data = {
+        "bot_name": retry_bot_name,
+        "language": retry_language,
+        "task": retry_task,
+        "retry_of_meeting_id": previous_meeting.id,  # Track which meeting this is retrying
+    }
+    if passcode:
+        meeting_data["passcode"] = passcode
+
+    new_meeting = Meeting(
+        account_id=account.id,
+        platform=platform_value,
+        platform_specific_id=native_meeting_id,
+        status=MeetingStatus.REQUESTED.value,
+        data=meeting_data,
+    )
+    db.add(new_meeting)
+    await db.commit()
+    await db.refresh(new_meeting)
+    meeting_id = new_meeting.id
+    logger.info(f"Created retry meeting record with ID: {meeting_id} (retry of meeting {previous_meeting.id})")
+
+    # Publish initial 'requested' status
+    try:
+        await publish_meeting_status_change(
+            meeting_id,
+            "requested",
+            redis_client,
+            platform_value,
+            native_meeting_id,
+            account.id,
+        )
+    except Exception as pub_err:
+        logger.warning(f"Failed to publish initial 'requested' status for retry meeting {meeting_id}: {pub_err}")
+
+    # Start the bot container
+    container_id = None
+    connection_id = None
+    try:
+        logger.info(f"Starting bot container for retry meeting {meeting_id}...")
+        container_id, connection_id = await start_bot_container(
+            user_id=account.id,
+            meeting_id=meeting_id,
+            meeting_url=constructed_url,
+            platform=platform_value,
+            bot_name=retry_bot_name,
+            user_token=account.api_key,
+            native_meeting_id=native_meeting_id,
+            language=retry_language,
+            task=retry_task,
+        )
+        logger.info(f"Retry bot started: Container ID: {container_id}, Connection ID: {connection_id}")
+
+        if not container_id or not connection_id:
+            error_msg = "Failed to start retry bot container."
+            logger.error(f"{error_msg} for meeting {meeting_id}")
+
+            new_meeting.status = "error"
+            await db.commit()
+            await publish_meeting_status_change(
+                meeting_id,
+                "error",
+                redis_client,
+                platform_value,
+                native_meeting_id,
+                account.id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_msg,
+            )
+
+        # Update meeting record with container info
+        new_meeting.bot_container_id = container_id
+        await db.commit()
+        await db.refresh(new_meeting)
+
+        # Create session record
+        session = MeetingSession(
+            meeting_id=meeting_id,
+            session_uid=connection_id,
+            session_start_time=func.now(),
+        )
+        db.add(session)
+        await db.commit()
+        logger.info(f"Created session record for retry meeting {meeting_id} with session_uid {connection_id}")
+
+        return MeetingResponse.model_validate(new_meeting)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during retry bot launch for meeting {meeting_id}: {e}", exc_info=True)
+        new_meeting.status = "error"
+        await db.commit()
+        await publish_meeting_status_change(
+            meeting_id,
+            "error",
+            redis_client,
+            platform_value,
+            native_meeting_id,
+            account.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start retry bot container: {str(e)}",
+        )
+
+
 # --- NEW Endpoint: Get Running Bot Status ---
 @app.get(
     "/bots/status",
