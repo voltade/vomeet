@@ -53,13 +53,7 @@ jobs:
           
           echo "environment=$ENV" >> $GITHUB_OUTPUT
           echo "image_tag=$TAG" >> $GITHUB_OUTPUT
-          
-          # Set namespace based on environment
-          if [ "$ENV" == "staging" ]; then
-            echo "namespace=vomeet-staging" >> $GITHUB_OUTPUT
-          else
-            echo "namespace=vomeet" >> $GITHUB_OUTPUT
-          fi
+          echo "namespace=vomeet" >> $GITHUB_OUTPUT
 
   deploy:
     needs: set-environment
