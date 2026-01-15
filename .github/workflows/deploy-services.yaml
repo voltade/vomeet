@@ -3,26 +3,97 @@ name: Deploy Services
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+        default: production
       image_tag:
-        description: "Image tag to deploy (default: latest)"
+        description: "Image tag to deploy (default: latest for prod, staging for staging)"
         required: false
-        default: "latest"
+        default: ""
   workflow_run:
     workflows: ["Build Services"]
     types:
       - completed
     branches:
       - main
+  push:
+    branches:
+      - staging  # Auto-deploy to staging when pushing to staging branch
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/vomeet
-  NAMESPACE: vomeet
 
 jobs:
-  deploy:
+  set-environment:
     runs-on: ubuntu-latest
-    environment: production
+    outputs:
+      environment: ${{ steps.determine.outputs.environment }}
+      namespace: ${{ steps.determine.outputs.namespace }}
+      image_tag: ${{ steps.determine.outputs.image_tag }}
+      kube_cluster_name: ${{ steps.determine.outputs.kube_cluster_name }}
+      kube_cluster_url: ${{ steps.determine.outputs.kube_cluster_url }}
+      kube_token: ${{ steps.determine.outputs.kube_token }}
+      kube_certificate: ${{ steps.determine.outputs.kube_certificate }}
+      db_password_secret: ${{ steps.determine.outputs.db_password_secret }}
+      admin_api_token_secret: ${{ steps.determine.outputs.admin_api_token_secret }}
+    steps:
+      - name: Determine environment
+        id: determine
+        run: |
+          # Determine environment
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ inputs.environment }}"
+            TAG="${{ inputs.image_tag }}"
+          elif [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/staging" ]; then
+            ENV="staging"
+            TAG="staging"
+          else
+            # workflow_run from main branch
+            ENV="production"
+            TAG="latest"
+          fi
+          
+          # Set default tag if empty
+          if [ -z "$TAG" ]; then
+            if [ "$ENV" == "staging" ]; then
+              TAG="staging"
+            else
+              TAG="latest"
+            fi
+          fi
+          
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+          
+          # Set environment-specific values
+          if [ "$ENV" == "staging" ]; then
+            echo "namespace=vomeet-staging" >> $GITHUB_OUTPUT
+            echo "kube_cluster_name=${{ vars.KUBE_CLUSTER_NAME_STAGING }}" >> $GITHUB_OUTPUT
+            echo "kube_cluster_url=${{ vars.KUBE_CLUSTER_URL_STAGING }}" >> $GITHUB_OUTPUT
+            echo "kube_token=${{ secrets.KUBE_TOKEN_STAGING }}" >> $GITHUB_OUTPUT
+            echo "kube_certificate=${{ secrets.KUBE_CERTIFICATE_STAGING }}" >> $GITHUB_OUTPUT
+            echo "db_password_secret=${{ secrets.DB_PASSWORD_STAGING }}" >> $GITHUB_OUTPUT
+            echo "admin_api_token_secret=${{ secrets.ADMIN_API_TOKEN_STAGING }}" >> $GITHUB_OUTPUT
+          else
+            echo "namespace=vomeet" >> $GITHUB_OUTPUT
+            echo "kube_cluster_name=${{ vars.KUBE_CLUSTER_NAME_PROD }}" >> $GITHUB_OUTPUT
+            echo "kube_cluster_url=${{ vars.KUBE_CLUSTER_URL_PROD }}" >> $GITHUB_OUTPUT
+            echo "kube_token=${{ secrets.KUBE_TOKEN_PROD }}" >> $GITHUB_OUTPUT
+            echo "kube_certificate=${{ secrets.KUBE_CERTIFICATE_PROD }}" >> $GITHUB_OUTPUT
+            echo "db_password_secret=${{ secrets.DB_PASSWORD }}" >> $GITHUB_OUTPUT
+            echo "admin_api_token_secret=${{ secrets.ADMIN_API_TOKEN }}" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    needs: set-environment
+    runs-on: ubuntu-latest
+    environment: ${{ needs.set-environment.outputs.environment }}
     # Only run if workflow_dispatch OR if build succeeded
     if: >
       github.event_name == 'workflow_dispatch' ||
@@ -31,16 +102,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set image tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
-          else
-            # For workflow_run, use latest
-            echo "tag=latest" >> $GITHUB_OUTPUT
-          fi
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -51,7 +112,7 @@ jobs:
 
       - name: Check if images exist
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
+          TAG: ${{ needs.set-environment.outputs.image_tag }}
         run: |
           SERVICES="admin-api api-gateway bot-manager google-integration transcription-collector"
           MISSING=""
@@ -61,6 +122,13 @@ jobs:
               MISSING="${MISSING}${svc} "
             fi
           done
+          
+          # Check vomeet-bot separately (different naming)
+          BOT_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/vomeet-bot:${TAG}"
+          if ! docker manifest inspect "$BOT_IMAGE" > /dev/null 2>&1; then
+            MISSING="${MISSING}vomeet-bot "
+          fi
+          
           if [ -n "$MISSING" ]; then
             echo "❌ Missing images for tag ${TAG}: ${MISSING}"
             exit 1
@@ -84,21 +152,21 @@ jobs:
           apiVersion: v1
           kind: Config
           clusters:
-            - name: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
+            - name: ${{ needs.set-environment.outputs.kube_cluster_name }}
               cluster:
-                server: ${{ vars.KUBE_CLUSTER_URL_PROD }}
-                certificate-authority-data: ${{ secrets.KUBE_CERTIFICATE_PROD }}
+                server: ${{ needs.set-environment.outputs.kube_cluster_url }}
+                certificate-authority-data: ${{ needs.set-environment.outputs.kube_certificate }}
           contexts:
-            - name: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
+            - name: ${{ needs.set-environment.outputs.kube_cluster_name }}
               context:
-                cluster: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
-                namespace: ${{ env.NAMESPACE }}
+                cluster: ${{ needs.set-environment.outputs.kube_cluster_name }}
+                namespace: ${{ needs.set-environment.outputs.namespace }}
                 user: vomeet-admin
           users:
             - name: vomeet-admin
               user:
-                token: ${{ secrets.KUBE_TOKEN_PROD }}
-          current-context: ${{ vars.KUBE_CLUSTER_NAME_PROD }}
+                token: ${{ needs.set-environment.outputs.kube_token }}
+          current-context: ${{ needs.set-environment.outputs.kube_cluster_name }}
           EOF
           chmod 600 ~/.kube/config
 
@@ -108,60 +176,70 @@ jobs:
 
       - name: Create namespace
         run: |
-          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace ${{ needs.set-environment.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy Helm chart
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          ADMIN_API_TOKEN: ${{ secrets.ADMIN_API_TOKEN }}
+          TAG: ${{ needs.set-environment.outputs.image_tag }}
+          NAMESPACE: ${{ needs.set-environment.outputs.namespace }}
+          ENVIRONMENT: ${{ needs.set-environment.outputs.environment }}
+          DB_PASSWORD: ${{ needs.set-environment.outputs.db_password_secret }}
+          ADMIN_API_TOKEN: ${{ needs.set-environment.outputs.admin_api_token_secret }}
         run: |
+          # Determine values file and hostname
+          if [ "$ENVIRONMENT" == "staging" ]; then
+            VALUES_FILE="chart/values-staging.yaml"
+            HOSTNAMES="vomeet.voltade.sg"
+          else
+            VALUES_FILE="chart/values-production.yaml"
+            HOSTNAMES="vomeet.voltade.com,vomeet.io"
+          fi
+          
           helm upgrade --install vomeet ./chart \
-            --namespace ${{ env.NAMESPACE }} \
+            --namespace "$NAMESPACE" \
+            --values "$VALUES_FILE" \
             --set global.imageTag="$TAG" \
             --set postgresql.password="$DB_PASSWORD" \
             --set adminApiToken="$ADMIN_API_TOKEN" \
-            --set httpRoute.enabled=true \
-            --set "httpRoute.hostnames[0]=vomeet.voltade.com" \
-            --set "httpRoute.hostnames[1]=vomeet.io" \
-            --set "httpRoute.parentRefs[0].name=cloudflare-https" \
-            --set "httpRoute.parentRefs[0].namespace=gateway" \
             --wait \
             --timeout 10m
 
       - name: Force rollout restart
+        env:
+          NAMESPACE: ${{ needs.set-environment.outputs.namespace }}
         run: |
           echo "🔄 Forcing rollout restart for all deployments..."
-          kubectl rollout restart deployment/vomeet-admin-api -n ${{ env.NAMESPACE }}
-          kubectl rollout restart deployment/vomeet-api-gateway -n ${{ env.NAMESPACE }}
-          kubectl rollout restart deployment/vomeet-bot-manager -n ${{ env.NAMESPACE }}
-          kubectl rollout restart deployment/vomeet-google-integration -n ${{ env.NAMESPACE }}
-          kubectl rollout restart deployment/vomeet-google-integration-scheduler -n ${{ env.NAMESPACE }} || true
-          kubectl rollout restart deployment/vomeet-google-integration-worker -n ${{ env.NAMESPACE }} || true
-          kubectl rollout restart deployment/vomeet-transcription-collector -n ${{ env.NAMESPACE }}
+          kubectl rollout restart deployment/vomeet-admin-api -n "$NAMESPACE"
+          kubectl rollout restart deployment/vomeet-api-gateway -n "$NAMESPACE"
+          kubectl rollout restart deployment/vomeet-bot-manager -n "$NAMESPACE"
+          kubectl rollout restart deployment/vomeet-google-integration -n "$NAMESPACE"
+          kubectl rollout restart deployment/vomeet-google-integration-scheduler -n "$NAMESPACE" || true
+          kubectl rollout restart deployment/vomeet-google-integration-worker -n "$NAMESPACE" || true
+          kubectl rollout restart deployment/vomeet-transcription-collector -n "$NAMESPACE"
           
           echo "⏳ Waiting for rollouts to complete..."
-          kubectl rollout status deployment/vomeet-admin-api -n ${{ env.NAMESPACE }} --timeout=120s
-          kubectl rollout status deployment/vomeet-api-gateway -n ${{ env.NAMESPACE }} --timeout=120s
-          kubectl rollout status deployment/vomeet-bot-manager -n ${{ env.NAMESPACE }} --timeout=120s
-          kubectl rollout status deployment/vomeet-google-integration -n ${{ env.NAMESPACE }} --timeout=120s
-          kubectl rollout status deployment/vomeet-google-integration-scheduler -n ${{ env.NAMESPACE }} --timeout=120s || true
-          kubectl rollout status deployment/vomeet-google-integration-worker -n ${{ env.NAMESPACE }} --timeout=120s || true
-          kubectl rollout status deployment/vomeet-transcription-collector -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/vomeet-admin-api -n "$NAMESPACE" --timeout=120s
+          kubectl rollout status deployment/vomeet-api-gateway -n "$NAMESPACE" --timeout=120s
+          kubectl rollout status deployment/vomeet-bot-manager -n "$NAMESPACE" --timeout=120s
+          kubectl rollout status deployment/vomeet-google-integration -n "$NAMESPACE" --timeout=120s
+          kubectl rollout status deployment/vomeet-google-integration-scheduler -n "$NAMESPACE" --timeout=120s || true
+          kubectl rollout status deployment/vomeet-google-integration-worker -n "$NAMESPACE" --timeout=120s || true
+          kubectl rollout status deployment/vomeet-transcription-collector -n "$NAMESPACE" --timeout=120s
           echo "✅ All rollouts complete!"
 
       - name: Run database migrations
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
+          TAG: ${{ needs.set-environment.outputs.image_tag }}
+          NAMESPACE: ${{ needs.set-environment.outputs.namespace }}
         run: |
           echo "🔄 Running database migrations..."
           
           # Wait for CNPG cluster to be ready
           echo "Waiting for CNPG cluster..."
-          kubectl wait --for=condition=Ready clusters.postgresql.cnpg.io/vomeet-cnpg -n ${{ env.NAMESPACE }} --timeout=120s || true
+          kubectl wait --for=condition=Ready clusters.postgresql.cnpg.io/vomeet-cnpg -n "$NAMESPACE" --timeout=120s || true
           
           # Delete any previous migration job
-          kubectl delete job db-migrate -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete job db-migrate -n "$NAMESPACE" --ignore-not-found=true
           
           # Create migration job
           cat <<EOF | kubectl apply -f -
@@ -169,7 +247,7 @@ jobs:
           kind: Job
           metadata:
             name: db-migrate
-            namespace: ${{ env.NAMESPACE }}
+            namespace: $NAMESPACE
           spec:
             ttlSecondsAfterFinished: 300
             backoffLimit: 3
@@ -237,21 +315,23 @@ jobs:
           
           # Wait for job to complete
           echo "Waiting for migration job to complete..."
-          kubectl wait --for=condition=complete job/db-migrate -n ${{ env.NAMESPACE }} --timeout=120s
+          kubectl wait --for=condition=complete job/db-migrate -n "$NAMESPACE" --timeout=120s
           
           # Show logs
           echo "Migration logs:"
-          kubectl logs job/db-migrate -n ${{ env.NAMESPACE }}
+          kubectl logs job/db-migrate -n "$NAMESPACE"
           
           echo "✅ Database migrations complete!"
 
       - name: Verify deployment
+        env:
+          NAMESPACE: ${{ needs.set-environment.outputs.namespace }}
         run: |
           echo "Checking deployments..."
-          kubectl get deployments -n ${{ env.NAMESPACE }}
+          kubectl get deployments -n "$NAMESPACE"
           echo ""
           echo "Checking pods..."
-          kubectl get pods -n ${{ env.NAMESPACE }}
+          kubectl get pods -n "$NAMESPACE"
           echo "✅ Deployment verified"
 
       - name: Cleanup kubeconfig
@@ -261,21 +341,24 @@ jobs:
       - name: Send success notification to Telegram
         if: success()
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
+          TAG: ${{ needs.set-environment.outputs.image_tag }}
+          ENVIRONMENT: ${{ needs.set-environment.outputs.environment }}
+          NAMESPACE: ${{ needs.set-environment.outputs.namespace }}
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d message_thread_id="${{ secrets.TELEGRAM_THREAD_ID }}" \
-            -d text="✅ *Vomeet Deployed*%0A%0A📦 Services: all%0A🏷️ Image Tag: ${{ env.TAG }}%0A👤 Triggered by: ${{ github.actor }}%0A⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')%0A🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
+            -d text="✅ *Vomeet Deployed*%0A%0A🌐 Environment: $ENVIRONMENT%0A📦 Namespace: $NAMESPACE%0A🏷️ Image Tag: $TAG%0A👤 Triggered by: ${{ github.actor }}%0A⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')%0A🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
             -d parse_mode="Markdown"
 
       - name: Send failure notification to Telegram
         if: failure()
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
+          TAG: ${{ needs.set-environment.outputs.image_tag }}
+          ENVIRONMENT: ${{ needs.set-environment.outputs.environment }}
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d message_thread_id="${{ secrets.TELEGRAM_THREAD_ID }}" \
-            -d text="❌ *Vomeet Deploy Failed*%0A%0A🏷️ Image Tag: ${{ env.TAG }}%0A👤 Triggered by: ${{ github.actor }}%0A⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')%0A🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
+            -d text="❌ *Vomeet Deploy Failed*%0A%0A🌐 Environment: $ENVIRONMENT%0A🏷️ Image Tag: $TAG%0A👤 Triggered by: ${{ github.actor }}%0A⏰ Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')%0A🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
             -d parse_mode="Markdown"

@@ -16,6 +16,7 @@ on:
       - 'services/bot-manager/**'
       - 'services/google-integration/**'
       - 'services/transcription-collector/**'
+      - 'services/vomeet-bot/**'
       - 'libs/shared-models/**'
       - '.github/workflows/build-services.yaml'
 
@@ -32,6 +33,7 @@ jobs:
       bot-manager: ${{ steps.changes.outputs.bot-manager }}
       google-integration: ${{ steps.changes.outputs.google-integration }}
       transcription-collector: ${{ steps.changes.outputs.transcription-collector }}
+      vomeet-bot: ${{ steps.changes.outputs.vomeet-bot }}
       shared-models: ${{ steps.changes.outputs.shared-models }}
       any-changed: ${{ steps.changes.outputs.any-changed }}
     steps:
@@ -52,6 +54,7 @@ jobs:
               echo "bot-manager=true" >> $GITHUB_OUTPUT
               echo "google-integration=true" >> $GITHUB_OUTPUT
               echo "transcription-collector=true" >> $GITHUB_OUTPUT
+              echo "vomeet-bot=true" >> $GITHUB_OUTPUT
               echo "shared-models=true" >> $GITHUB_OUTPUT
               echo "any-changed=true" >> $GITHUB_OUTPUT
               exit 0
@@ -85,6 +88,9 @@ jobs:
           if echo "$CHANGED_FILES" | grep -q "^services/transcription-collector/"; then
             echo "transcription-collector=true" >> $GITHUB_OUTPUT
           fi
+          if echo "$CHANGED_FILES" | grep -q "^services/vomeet-bot/"; then
+            echo "vomeet-bot=true" >> $GITHUB_OUTPUT
+          fi
 
           # Shared models changes trigger all services
           if echo "$CHANGED_FILES" | grep -q "^libs/shared-models/"; then
@@ -94,10 +100,11 @@ jobs:
             echo "bot-manager=true" >> $GITHUB_OUTPUT
             echo "google-integration=true" >> $GITHUB_OUTPUT
             echo "transcription-collector=true" >> $GITHUB_OUTPUT
+            echo "vomeet-bot=true" >> $GITHUB_OUTPUT
           fi
 
           # Check if any service changed
-          if echo "$CHANGED_FILES" | grep -qE "^(services/(admin-api|api-gateway|bot-manager|google-integration|transcription-collector)/|libs/shared-models/)"; then
+          if echo "$CHANGED_FILES" | grep -qE "^(services/(admin-api|api-gateway|bot-manager|google-integration|transcription-collector|vomeet-bot)/|libs/shared-models/)"; then
             echo "any-changed=true" >> $GITHUB_OUTPUT
           fi
 
@@ -311,6 +318,48 @@ jobs:
           cache-to: type=gha,mode=max,scope=transcription-collector
           platforms: linux/amd64
 
+  build-vomeet-bot:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.vomeet-bot == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/vomeet-bot
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/vomeet-bot/core
+          file: ./services/vomeet-bot/core/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=vomeet-bot
+          cache-to: type=gha,mode=max,scope=vomeet-bot
+          platforms: linux/amd64
+
   summary:
     needs:
       - detect-changes
@@ -319,6 +368,7 @@ jobs:
       - build-bot-manager
       - build-google-integration
       - build-transcription-collector
+      - build-vomeet-bot
     if: always() && needs.detect-changes.outputs.any-changed == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -358,6 +408,12 @@ jobs:
           else
             echo "| transcription-collector | skipped (no changes) |" >> $GITHUB_STEP_SUMMARY
           fi
+          
+          if [ "${{ needs.detect-changes.outputs.vomeet-bot }}" == "true" ]; then
+            echo "| vomeet-bot | ${{ needs.build-vomeet-bot.result }} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| vomeet-bot | skipped (no changes) |" >> $GITHUB_STEP_SUMMARY
+          fi
 
   notify-failure:
     needs:
@@ -367,6 +423,7 @@ jobs:
       - build-bot-manager
       - build-google-integration
       - build-transcription-collector
+      - build-vomeet-bot
     if: failure()
     runs-on: ubuntu-latest
     steps:
@@ -378,6 +435,7 @@ jobs:
           [ "${{ needs.build-bot-manager.result }}" == "failure" ] && FAILED="${FAILED}• bot-manager%0A"
           [ "${{ needs.build-google-integration.result }}" == "failure" ] && FAILED="${FAILED}• google-integration%0A"
           [ "${{ needs.build-transcription-collector.result }}" == "failure" ] && FAILED="${FAILED}• transcription-collector%0A"
+          [ "${{ needs.build-vomeet-bot.result }}" == "failure" ] && FAILED="${FAILED}• vomeet-bot%0A"
           
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \

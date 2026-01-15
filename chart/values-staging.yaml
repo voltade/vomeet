@@ -1,0 +1,77 @@
+# Staging environment overrides
+global:
+  imageTag: staging  # Use staging tag
+  imagePullPolicy: Always  # Always pull latest staging images
+
+# Staging hostname - YOUR DESIRED DOMAIN
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: cloudflare-https
+      namespace: gateway
+  hostnames:
+    - vomeet.voltade.sg  # Your staging domain
+
+# Staging Google OAuth callback
+google-integration:
+  redirectUri: "https://vomeet.voltade.sg/google/callback"
+
+# Staging resource allocation (fewer resources than production)
+api-gateway:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+admin-api:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+bot-manager:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+transcription-collector:
+  replicaCount: 1
+
+google-integration:
+  replicaCount: 1
+
+# Staging database with smaller resources
+cnpg:
+  instances: 1  # Single instance for staging
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  storage:
+    storageClass: local-path  # Or your staging storage class
+    size: 10Gi
+
+dragonfly:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

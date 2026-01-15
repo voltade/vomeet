@@ -1,0 +1,68 @@
+# Development/local environment overrides
+global:
+  imageTag: latest  # Use latest builds for development
+  imagePullPolicy: Always
+
+# Development uses localhost or local ingress
+httpRoute:
+  enabled: false  # Disable for local development
+
+ingress:
+  enabled: false  # Or enable with local ingress controller
+
+# Development Google OAuth callback (localhost)
+google-integration:
+  redirectUri: "http://localhost:18056/google/callback"
+
+# Minimal resources for local development
+api-gateway:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+admin-api:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+bot-manager:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+cnpg:
+  instances: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+  storage:
+    storageClass: local-path
+    size: 5Gi
+
+dragonfly:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

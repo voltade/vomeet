@@ -1,0 +1,62 @@
+# Production environment overrides
+global:
+  imageTag: stable  # Use tagged releases for production
+  imagePullPolicy: IfNotPresent
+
+# Production hostname
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: cloudflare-https
+      namespace: gateway
+  hostnames:
+    - vomeet.voltade.com
+
+# Production Google OAuth callback
+google-integration:
+  redirectUri: "https://vomeet.voltade.com/google/callback"
+
+# Production resource allocation (more resources)
+api-gateway:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+admin-api:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+bot-manager:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+# Production database with higher resources
+cnpg:
+  instances: 3  # High availability
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+  storage:
+    storageClass: fast-ssd  # Use your production storage class
+    size: 50Gi
