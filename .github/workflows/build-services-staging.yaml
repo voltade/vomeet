@@ -16,6 +16,7 @@ on:
       - 'services/bot-manager/**'
       - 'services/google-integration/**'
       - 'services/transcription-collector/**'
+      - 'services/vomeet-bot/**'
       - 'libs/shared-models/**'
       - '.github/workflows/build-services-staging.yaml'
 
@@ -33,6 +34,7 @@ jobs:
       bot-manager: ${{ steps.changes.outputs.bot-manager }}
       google-integration: ${{ steps.changes.outputs.google-integration }}
       transcription-collector: ${{ steps.changes.outputs.transcription-collector }}
+      vomeet-bot: ${{ steps.changes.outputs.vomeet-bot }}
       shared-models: ${{ steps.changes.outputs.shared-models }}
       any-changed: ${{ steps.changes.outputs.any-changed }}
     steps:
