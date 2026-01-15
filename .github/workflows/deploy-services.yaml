@@ -36,12 +36,6 @@ jobs:
       environment: ${{ steps.determine.outputs.environment }}
       namespace: ${{ steps.determine.outputs.namespace }}
       image_tag: ${{ steps.determine.outputs.image_tag }}
-      kube_cluster_name: ${{ steps.determine.outputs.kube_cluster_name }}
-      kube_cluster_url: ${{ steps.determine.outputs.kube_cluster_url }}
-      kube_token: ${{ steps.determine.outputs.kube_token }}
-      kube_certificate: ${{ steps.determine.outputs.kube_certificate }}
-      db_password_secret: ${{ steps.determine.outputs.db_password_secret }}
-      admin_api_token_secret: ${{ steps.determine.outputs.admin_api_token_secret }}
     steps:
       - name: Determine environment
         id: determine
@@ -71,23 +65,11 @@ jobs:
           echo "environment=$ENV" >> $GITHUB_OUTPUT
           echo "image_tag=$TAG" >> $GITHUB_OUTPUT
           
-          # Set environment-specific values
+          # Set namespace based on environment
           if [ "$ENV" == "staging" ]; then
             echo "namespace=vomeet-staging" >> $GITHUB_OUTPUT
-            echo "kube_cluster_name=${{ vars.KUBE_CLUSTER_NAME_STAGING }}" >> $GITHUB_OUTPUT
-            echo "kube_cluster_url=${{ vars.KUBE_CLUSTER_URL_STAGING }}" >> $GITHUB_OUTPUT
-            echo "kube_token=${{ secrets.KUBE_TOKEN_STAGING }}" >> $GITHUB_OUTPUT
-            echo "kube_certificate=${{ secrets.KUBE_CERTIFICATE_STAGING }}" >> $GITHUB_OUTPUT
-            echo "db_password_secret=${{ secrets.DB_PASSWORD_STAGING }}" >> $GITHUB_OUTPUT
-            echo "admin_api_token_secret=${{ secrets.ADMIN_API_TOKEN_STAGING }}" >> $GITHUB_OUTPUT
           else
             echo "namespace=vomeet" >> $GITHUB_OUTPUT
-            echo "kube_cluster_name=${{ vars.KUBE_CLUSTER_NAME_PROD }}" >> $GITHUB_OUTPUT
-            echo "kube_cluster_url=${{ vars.KUBE_CLUSTER_URL_PROD }}" >> $GITHUB_OUTPUT
-            echo "kube_token=${{ secrets.KUBE_TOKEN_PROD }}" >> $GITHUB_OUTPUT
-            echo "kube_certificate=${{ secrets.KUBE_CERTIFICATE_PROD }}" >> $GITHUB_OUTPUT
-            echo "db_password_secret=${{ secrets.DB_PASSWORD }}" >> $GITHUB_OUTPUT
-            echo "admin_api_token_secret=${{ secrets.ADMIN_API_TOKEN }}" >> $GITHUB_OUTPUT
           fi
 
   deploy:
@@ -146,27 +128,42 @@ jobs:
           version: '3.16.4'
 
       - name: Create kubeconfig
+        env:
+          ENVIRONMENT: ${{ needs.set-environment.outputs.environment }}
         run: |
+          # Set environment-specific values
+          if [ "$ENVIRONMENT" == "staging" ]; then
+            KUBE_CLUSTER_NAME="${{ vars.KUBE_CLUSTER_NAME_STAGING }}"
+            KUBE_CLUSTER_URL="${{ vars.KUBE_CLUSTER_URL_STAGING }}"
+            KUBE_TOKEN="${{ secrets.KUBE_TOKEN_STAGING }}"
+            KUBE_CERT="${{ secrets.KUBE_CERTIFICATE_STAGING }}"
+          else
+            KUBE_CLUSTER_NAME="${{ vars.KUBE_CLUSTER_NAME_PROD }}"
+            KUBE_CLUSTER_URL="${{ vars.KUBE_CLUSTER_URL_PROD }}"
+            KUBE_TOKEN="${{ secrets.KUBE_TOKEN_PROD }}"
+            KUBE_CERT="${{ secrets.KUBE_CERTIFICATE_PROD }}"
+          fi
+          
           mkdir -p ~/.kube
           cat > ~/.kube/config << EOF
           apiVersion: v1
           kind: Config
           clusters:
-            - name: ${{ needs.set-environment.outputs.kube_cluster_name }}
+            - name: $KUBE_CLUSTER_NAME
               cluster:
-                server: ${{ needs.set-environment.outputs.kube_cluster_url }}
-                certificate-authority-data: ${{ needs.set-environment.outputs.kube_certificate }}
+                server: $KUBE_CLUSTER_URL
+                certificate-authority-data: $KUBE_CERT
           contexts:
-            - name: ${{ needs.set-environment.outputs.kube_cluster_name }}
+            - name: $KUBE_CLUSTER_NAME
               context:
-                cluster: ${{ needs.set-environment.outputs.kube_cluster_name }}
+                cluster: $KUBE_CLUSTER_NAME
                 namespace: ${{ needs.set-environment.outputs.namespace }}
                 user: vomeet-admin
           users:
             - name: vomeet-admin
               user:
-                token: ${{ needs.set-environment.outputs.kube_token }}
-          current-context: ${{ needs.set-environment.outputs.kube_cluster_name }}
+                token: $KUBE_TOKEN
+          current-context: $KUBE_CLUSTER_NAME
           EOF
           chmod 600 ~/.kube/config
 
@@ -183,16 +180,16 @@ jobs:
           TAG: ${{ needs.set-environment.outputs.image_tag }}
           NAMESPACE: ${{ needs.set-environment.outputs.namespace }}
           ENVIRONMENT: ${{ needs.set-environment.outputs.environment }}
-          DB_PASSWORD: ${{ needs.set-environment.outputs.db_password_secret }}
-          ADMIN_API_TOKEN: ${{ needs.set-environment.outputs.admin_api_token_secret }}
         run: |
-          # Determine values file and hostname
+          # Set environment-specific secrets
           if [ "$ENVIRONMENT" == "staging" ]; then
+            DB_PASSWORD="${{ secrets.DB_PASSWORD_STAGING }}"
+            ADMIN_API_TOKEN="${{ secrets.ADMIN_API_TOKEN_STAGING }}"
             VALUES_FILE="chart/values-staging.yaml"
-            HOSTNAMES="vomeet.voltade.sg"
           else
+            DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+            ADMIN_API_TOKEN="${{ secrets.ADMIN_API_TOKEN }}"
             VALUES_FILE="chart/values-production.yaml"
-            HOSTNAMES="vomeet.voltade.com,vomeet.io"
           fi
           
           helm upgrade --install vomeet ./chart \
