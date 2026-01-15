@@ -103,9 +103,9 @@ docker run --rm --name "$CONTAINER_NAME" \
     "redisUrl":"redis://redis:6379/0",
     "container_name":"'"$CONTAINER_NAME"'",
     "automaticLeave":{
-      "waitingRoomTimeout":300000,
-      "noOneJoinedTimeout":600000,
-      "everyoneLeftTimeout":120000
+      "waitingRoomTimeout": 900000,
+      "noOneJoinedTimeout": 300000,
+      "everyoneLeftTimeout": 120000
     }
   }' \
   -e WHISPER_LIVE_URL="ws://whisperlive:9090" \

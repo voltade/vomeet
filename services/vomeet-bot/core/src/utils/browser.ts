@@ -32,8 +32,8 @@ export class BrowserAudioService {
 	}
 
 	async findMediaElements(
-		retries: number = 15,
-		delay: number = 2000,
+		retries: number = 30,
+		delay: number = 3000,
 	): Promise<HTMLMediaElement[]> {
 		for (let i = 0; i < retries; i++) {
 			// Debug: Log all audio/video elements found

@@ -569,6 +569,14 @@ class MeetingCreate(BaseModel):
         description="Optional task for the transcription model (e.g., 'transcribe', 'translate')",
     )
     passcode: Optional[str] = Field(None, description="Optional passcode for the meeting (Teams only)")
+    scheduled_start_time: Optional[datetime] = Field(
+        None,
+        description="Optional scheduled start time of the meeting in ISO 8601 format (UTC)",
+    )
+    scheduled_end_time: Optional[datetime] = Field(
+        None,
+        description="Optional scheduled end time of the meeting in ISO 8601 format (UTC)",
+    )
 
     @field_validator("platform")
     @classmethod
@@ -658,6 +666,14 @@ class MeetingResponse(
     bot_container_id: Optional[str]
     start_time: Optional[datetime]
     end_time: Optional[datetime]
+    scheduled_start_time: Optional[datetime] = Field(
+        None,
+        description="Scheduled start time of the meeting (UTC)",
+    )
+    scheduled_end_time: Optional[datetime] = Field(
+        None,
+        description="Scheduled end time of the meeting (UTC)",
+    )
     data: Optional[Dict] = Field(
         default_factory=dict,
         description="JSON data containing meeting metadata like name, participants, languages, notes, and status reasons",

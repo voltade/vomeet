@@ -18,10 +18,14 @@ export const BotConfigSchema = z.object({
 		waitingRoomTimeout: z.number().int(),
 		noOneJoinedTimeout: z.number().int(),
 		everyoneLeftTimeout: z.number().int(),
+		idleAfterScheduledEndTimeout: z.number().int().optional(),
 	}),
 	reconnectionIntervalMs: z.number().int().optional(), // ADDED: Optional reconnection interval
 	meeting_id: z.number().int().optional(), // Allow optional internal ID
 	botManagerCallbackUrl: z.string().url().optional(), // ADDED: Optional callback URL
+	scheduledStartTime: z.union([z.string(), z.number()]).nullish(), // ISO 8601 string or Unix timestamp in ms
+	scheduledEndTime: z.union([z.string(), z.number()]).nullish(), // ISO 8601 string or Unix timestamp in ms
+	earlyJoinMinutes: z.number().int().optional(), // Minutes to join before scheduled start
 });
 
 (function main() {

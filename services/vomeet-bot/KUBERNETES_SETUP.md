@@ -168,9 +168,9 @@ The bot container receives a `BOT_CONFIG` JSON environment variable with:
   "redisUrl": "redis://...",
   "container_name": "vomeet-bot-123-abc12345",
   "automaticLeave": {
-    "waitingRoomTimeout": 300000,
-    "noOneJoinedTimeout": 120000,
-    "everyoneLeftTimeout": 60000
+    "waitingRoomTimeout": 900000,
+    "noOneJoinedTimeout": 300000,
+    "everyoneLeftTimeout": 120000
   },
   "botManagerCallbackUrl": "http://bot-manager:8080/..."
 }

@@ -168,6 +168,8 @@ async def start_bot_container(
     native_meeting_id: str,
     language: Optional[str],
     task: Optional[str],
+    scheduled_start_time: Optional[str] = None,  # ISO 8601 format or Unix timestamp in ms
+    scheduled_end_time: Optional[str] = None,  # ISO 8601 format or Unix timestamp in ms
 ) -> Optional[tuple[str, str]]:
     """
     Starts a vomeet-bot container via requests_unixsocket AFTER checking user limit.
@@ -236,10 +238,13 @@ async def start_bot_container(
         "container_name": container_name,  # ADDED: Container name for identification
         "automaticLeave": {
             "waitingRoomTimeout": 900000,
-            "noOneJoinedTimeout": 120000,
-            "everyoneLeftTimeout": 60000,
+            "noOneJoinedTimeout": 300000,
+            "everyoneLeftTimeout": 120000,
         },
         "botManagerCallbackUrl": f"http://bot-manager:8080/bots/internal/callback/exited",
+        "scheduledStartTime": scheduled_start_time,  # ISO 8601 string or Unix timestamp in ms
+        "scheduledEndTime": scheduled_end_time,  # ISO 8601 string or Unix timestamp in ms
+        "earlyJoinMinutes": 15,  # Join 15 minutes before scheduled start
     }
     # Remove keys with None values before serializing
     cleaned_config_data = {k: v for k, v in bot_config_data.items() if v is not None}

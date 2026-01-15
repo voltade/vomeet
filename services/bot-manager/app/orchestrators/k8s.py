@@ -96,6 +96,7 @@ async def start_bot_container(
     native_meeting_id: str,
     language: Optional[str],
     task: Optional[str],
+    scheduled_start_time: Optional[str] = None,  # ISO 8601 format or Unix timestamp in ms
     scheduled_end_time: Optional[str] = None,  # ISO 8601 format or Unix timestamp in ms
 ) -> Optional[Tuple[str, str]]:
     """Create a Kubernetes Job for a vomeet-bot instance.
@@ -154,12 +155,12 @@ async def start_bot_container(
             "idleAfterScheduledEndTimeout": 900000,  # 15 minutes (in milliseconds)
         },
         "botManagerCallbackUrl": K8S_BOT_MANAGER_CALLBACK_URL,
+        "scheduledStartTime": scheduled_start_time,  # ISO 8601 string or Unix timestamp in ms
         "scheduledEndTime": scheduled_end_time,  # ISO 8601 string or Unix timestamp in ms
+        "earlyJoinMinutes": 15,  # Join 15 minutes before scheduled start
     }
 
-    # Remove None values
-    cleaned_config_data = {k: v for k, v in bot_config_data.items() if v is not None}
-    bot_config_json = json.dumps(cleaned_config_data)
+    bot_config_json = json.dumps(bot_config_data)
 
     # Generate unique job name (Kubernetes names must be DNS-1123 subdomain)
     job_name = f"vomeet-bot-{meeting_id}-{connection_id[:8]}"

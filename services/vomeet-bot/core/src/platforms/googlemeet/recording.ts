@@ -890,6 +890,7 @@ export async function startGoogleRecording(
 								audioService: any,
 								whisperLiveService: any,
 								resolve: any,
+								reject: any,
 							) => {
 								(window as any).logBot(
 									"Setting up Google Meet meeting monitoring...",
@@ -898,7 +899,7 @@ export async function startGoogleRecording(
 								const leaveCfg =
 									(botConfigData && (botConfigData as any).automaticLeave) ||
 									{};
-								const startupAloneTimeoutSeconds = Number(
+								let startupAloneTimeoutSeconds = Number(
 									(leaveCfg.noOneJoinedTimeout ?? 20 * 60 * 1000) / 1000,
 								);
 								const everyoneLeftTimeoutSeconds = Number(
@@ -908,6 +909,45 @@ export async function startGoogleRecording(
 								const idleAfterScheduledEndTimeoutSeconds = Number(
 									(leaveCfg.idleAfterScheduledEndTimeout ?? 15 * 60 * 1000) / 1000,
 								);
+
+								// Parse scheduled start time if provided
+								let scheduledStartTimeMs: number | null = null;
+								if (botConfigData?.scheduledStartTime) {
+									const startTime = botConfigData.scheduledStartTime;
+									if (typeof startTime === 'number') {
+										scheduledStartTimeMs = startTime;
+									} else if (typeof startTime === 'string') {
+										const parsed = Date.parse(startTime);
+										if (!isNaN(parsed)) {
+											scheduledStartTimeMs = parsed;
+										}
+									}
+									if (scheduledStartTimeMs) {
+										const startTimeStr = new Date(scheduledStartTimeMs).toISOString();
+										(window as any).logBot(
+											`📅 Scheduled meeting start time: ${startTimeStr}`
+										);
+										
+										// Calculate dynamic timeout for scheduled meetings
+										// Wait until scheduledStartTime + 15 minutes buffer
+										const postStartBufferMs = 15 * 60 * 1000; // 15 minutes
+										const targetWaitUntilMs = scheduledStartTimeMs + postStartBufferMs;
+										const now = Date.now();
+										const dynamicTimeoutMs = targetWaitUntilMs - now;
+										
+										if (dynamicTimeoutMs > 0) {
+											const dynamicTimeoutSeconds = Math.floor(dynamicTimeoutMs / 1000);
+											// Use the longer of configured timeout or dynamic timeout
+											if (dynamicTimeoutSeconds > startupAloneTimeoutSeconds) {
+												const dynamicMinutes = Math.floor(dynamicTimeoutSeconds / 60);
+												(window as any).logBot(
+													`⏰ Scheduled meeting: Extending noOneJoinedTimeout from ${Math.floor(startupAloneTimeoutSeconds / 60)}m to ${dynamicMinutes}m (waiting until ${dynamicMinutes - 15}m after scheduled start)`
+												);
+												startupAloneTimeoutSeconds = dynamicTimeoutSeconds;
+											}
+										}
+									}
+								}
 
 								// Parse scheduled end time if provided
 								let scheduledEndTimeMs: number | null = null;
@@ -1099,6 +1139,7 @@ export async function startGoogleRecording(
 								audioService,
 								whisperLiveService,
 								resolve,
+								reject,
 							);
 						})
 						.catch((err: any) => {

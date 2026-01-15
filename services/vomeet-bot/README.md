@@ -203,9 +203,9 @@ npm install
   "meetingUrl": "https://meet.google.com/xxxx",
   "botName": "TestBot",
   "automaticLeave": {
-    "waitingRoomTimeout": 300000,
+    "waitingRoomTimeout": 900000,
     "noOneJoinedTimeout": 300000,
-    "everyoneLeftTimeout": 300000
+    "everyoneLeftTimeout": 120000
   }
 }
 ```

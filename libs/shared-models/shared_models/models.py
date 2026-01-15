@@ -61,6 +61,8 @@ class Meeting(Base):
     bot_container_id = Column(String(255), nullable=True)
     start_time = Column(DateTime, nullable=True)
     end_time = Column(DateTime, nullable=True)
+    scheduled_start_time = Column(DateTime, nullable=True, index=True)
+    scheduled_end_time = Column(DateTime, nullable=True, index=True)
     data = Column(JSONB, nullable=False, default=text("'{}'::jsonb"))
     created_at = Column(DateTime, server_default=func.now(), index=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

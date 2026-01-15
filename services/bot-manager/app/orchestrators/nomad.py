@@ -63,6 +63,8 @@ async def start_bot_container(
     native_meeting_id: str,
     language: Optional[str],
     task: Optional[str],
+    scheduled_start_time: Optional[str] = None,  # ISO 8601 format or Unix timestamp in ms
+    scheduled_end_time: Optional[str] = None,  # ISO 8601 format or Unix timestamp in ms
 ) -> Optional[Tuple[str, str]]:
     """Dispatch a parameterised *vomeet-bot* Nomad job.
 
@@ -109,14 +111,15 @@ async def start_bot_container(
         "connection_id": connection_id,
         "language": language or "",
         "task": task or "",
+        "scheduled_start_time": scheduled_start_time or "",
+        "scheduled_end_time": scheduled_end_time or "",
+        "early_join_minutes": "15",  # Join 15 minutes before scheduled start
     }
-
-    # Nomad job dispatch endpoint
-    url = f"{NOMAD_ADDR}/v1/job/{BOT_JOB_NAME}/dispatch"
 
     # According to Nomad docs, metadata can be supplied in JSON body.
     payload = {"Meta": meta}
 
+    url = f"{NOMAD_ADDR}/v1/job/{BOT_JOB_NAME}/dispatch"
     logger.info(f"Dispatching Nomad job '{BOT_JOB_NAME}' for meeting {meeting_id} with meta {meta} -> {url}")
 
     try:

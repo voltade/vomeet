@@ -647,6 +647,8 @@ async def request_bot(
         platform=req.platform.value,
         platform_specific_id=native_meeting_id,
         status=MeetingStatus.REQUESTED.value,
+        scheduled_start_time=req.scheduled_start_time,
+        scheduled_end_time=req.scheduled_end_time,
         data=meeting_data,
     )
     db.add(new_meeting)
@@ -715,6 +717,17 @@ async def request_bot(
     connection_id = None
     try:
         logger.info(f"Attempting to start bot container for meeting {meeting_id} (native: {native_meeting_id})...")
+
+        # Convert scheduled times to ISO 8601 strings if provided
+        scheduled_start_time_str = None
+        scheduled_end_time_str = None
+        if req.scheduled_start_time:
+            scheduled_start_time_str = req.scheduled_start_time.isoformat()
+            logger.info(f"Meeting {meeting_id} has scheduled start time: {scheduled_start_time_str}")
+        if req.scheduled_end_time:
+            scheduled_end_time_str = req.scheduled_end_time.isoformat()
+            logger.info(f"Meeting {meeting_id} has scheduled end time: {scheduled_end_time_str}")
+
         container_id, connection_id = await start_bot_container(
             user_id=account.id,  # Use account_id as user_id for container labeling
             meeting_id=meeting_id,
@@ -725,6 +738,8 @@ async def request_bot(
             native_meeting_id=native_meeting_id,
             language=req.language,
             task=req.task,
+            scheduled_start_time=scheduled_start_time_str,
+            scheduled_end_time=scheduled_end_time_str,
         )
         logger.info(
             f"Call to start_bot_container completed. Container ID: {container_id}, Connection ID: {connection_id}"
