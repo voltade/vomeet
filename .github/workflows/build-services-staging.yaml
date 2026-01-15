@@ -16,6 +16,7 @@ on:
       - 'services/bot-manager/**'
       - 'services/google-integration/**'
       - 'services/transcription-collector/**'
+      - 'services/vomeet-bot/**'
       - 'libs/shared-models/**'
       - '.github/workflows/build-services-staging.yaml'
 
