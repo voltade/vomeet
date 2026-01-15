@@ -8,13 +8,9 @@ on:
         required: true
         type: choice
         options:
-          - production
           - staging
-        default: production
-      image_tag:
-        description: "Image tag to deploy (default: latest for prod, staging for staging)"
-        required: false
-        default: ""
+          - production
+        default: staging
   workflow_run:
     workflows: ["Build Services", "Build Services (Staging)"]
     types:
@@ -41,23 +37,18 @@ jobs:
           # Determine environment
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             ENV="${{ inputs.environment }}"
-            TAG="${{ inputs.image_tag }}"
-          elif [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/staging" ]; then
+          elif [ "${{ github.event_name }}" == "workflow_run" ] && [ "${{ github.event.workflow_run.head_branch }}" == "staging" ]; then
             ENV="staging"
-            TAG="staging"
           else
-            # workflow_run from main branch
+            # workflow_run from main branch or other
             ENV="production"
-            TAG="latest"
           fi
           
-          # Set default tag if empty
-          if [ -z "$TAG" ]; then
-            if [ "$ENV" == "staging" ]; then
-              TAG="staging"
-            else
-              TAG="latest"
-            fi
+          # Set tag based on environment
+          if [ "$ENV" == "staging" ]; then
+            TAG="staging"
+          else
+            TAG="latest"
           fi
           
           echo "environment=$ENV" >> $GITHUB_OUTPUT
