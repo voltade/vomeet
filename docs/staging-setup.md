@@ -4,7 +4,7 @@ This document describes how to set up and maintain the staging environment for V
 
 ## Overview
 
-The staging environment is a separate environment for testing that includes:
+The staging environment is a separate Kubernetes cluster for testing that includes:
 - All microservices (API Gateway, Bot Manager, Admin API, Google Integration, Transcription Collector)
 - CloudNativePG (PostgreSQL) database with fresh schema
 - Dragonfly (Redis alternative)
@@ -12,14 +12,14 @@ The staging environment is a separate environment for testing that includes:
 
 **Domain:** `https://vomeet.voltade.sg`
 
-**Note:** Staging uses a fresh database with the same schema as production, but no production data is synced.
+**Note:** Staging and production use separate clusters, so both use the `vomeet` namespace within their respective clusters. Staging uses a fresh database with the same schema as production, but no production data is synced.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                   Staging Environment                   │
-│                  (vomeet-staging namespace)             │
+│              (vomeet namespace - staging cluster)       │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
@@ -73,19 +73,183 @@ Create these variables in your GitHub repository:
 ```bash
 # Staging Cluster
 KUBE_CLUSTER_NAME_STAGING=local
-KUBE_CLUSTER_URL_STAGING=https://rancher.voltade.com/k8s/clusters/local
+KUBE_CLUSTER_URL_STAGING=https://rancher.voltade.sg/k8s/clusters/local
 ```
 
-### How to Get Rancher Token
+### How to Get Rancher Token (Service Account - Recommended for CI/CD)
+
+For long-lived CI/CD access, create a Kubernetes service account instead of using personal tokens:
+
+#### 1. Create Service Account
+
+```bash
+# Switch to vomeet namespace
+kubectl config set-context --current --namespace=vomeet
+
+# List existing service accounts (optional - check if it already exists)
+kubectl get serviceaccounts -n vomeet
+
+# Create service account
+kubectl create serviceaccount vomeet-github-deployer -n vomeet
+
+# Create a secret for the service account token (Kubernetes 1.24+)
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vomeet-github-deployer-token
+  namespace: vomeet
+  annotations:
+    kubernetes.io/service-account.name: vomeet-github-deployer
+type: kubernetes.io/service-account-token
+EOF
+```
+
+#### 2. Create ClusterRole with Required Permissions
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vomeet-deployer
+rules:
+# Namespace management
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "create"]
+# Deployments, ReplicaSets, Pods
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+# Services and Endpoints
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# ConfigMaps and Secrets
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Jobs and CronJobs
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Ingress and HTTPRoutes (Gateway API)
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["httproutes", "gateways"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# CloudNativePG (CNPG) Clusters
+- apiGroups: ["postgresql.cnpg.io"]
+  resources: ["clusters", "poolers", "backups", "scheduledbackups"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# PersistentVolumeClaims
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# ServiceAccounts
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+# RBAC
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Events (for debugging)
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+EOF
+```
+
+#### 3. Bind Role to Service Account
+
+```bash
+# Bind for vomeet namespace (in staging cluster)
+kubectl create clusterrolebinding vomeet-github-deployer \
+  --clusterrole=vomeet-deployer \
+  --serviceaccount=vomeet:vomeet-github-deployer
+```
+
+#### 4. Extract Token for GitHub Secrets
+
+```bash
+# Get the token (Kubernetes 1.24+)
+TOKEN=$(kubectl get secret vomeet-github-deployer-token -n vomeet -o jsonpath='{.data.token}' | base64 -d)
+echo $TOKEN
+
+# Get the CA certificate
+CA_CERT=$(kubectl get secret vomeet-github-deployer-token -n vomeet -o jsonpath='{.data.ca\.crt}')
+echo $CA_CERT
+
+# Get cluster server URL
+SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+echo $SERVER
+```
+
+#### 5. Add to GitHub Secrets
+
+Add these values to your GitHub repository secrets:
+- **KUBE_TOKEN_STAGING**: Use the `$TOKEN` value from above
+- **KUBE_CERTIFICATE_STAGING**: Use the `$CA_CERT` value (already base64 encoded)
+- **KUBE_CLUSTER_URL_STAGING**: Use the `$SERVER` value
+
+#### 6. Test the Service Account
+
+```bash
+# Create a test kubeconfig
+cat > /tmp/test-sa-kubeconfig.yaml <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- name: staging
+  cluster:
+    server: $SERVER
+    certificate-authority-data: $CA_CERT
+contexts:
+- name: staging
+  context:
+    cluster: staging
+    namespace: vomeet
+    user: vomeet-github-deployer
+users:
+- name: vomeet-github-deployer
+  user:
+    token: $TOKEN
+current-context: staging
+EOF
+
+# Test it
+kubectl --kubeconfig=/tmp/test-sa-kubeconfig.yaml get pods -n vomeet
+
+# Clean up test file
+rm /tmp/test-sa-kubeconfig.yaml
+```
+
+### Alternative: Using Rancher User Token (Less Secure)
+
+If you need quick access and can't create service accounts:
 
 1. Log in to Rancher: https://rancher.voltade.com
 2. Click on your user icon (top right) → "Account & API Keys"
 3. Click "Create API Key"
 4. Name it `vomeet-github-actions-staging`
 5. Scope: Select the cluster you want to access
-6. Click "Create"
-7. Copy the token (starts with `kubeconfig-user-...`)
-8. Add to GitHub Secrets as `KUBE_TOKEN_STAGING`
+6. Set expiration: **Never** (for long-lived access) or **1 year**
+7. Click "Create"
+8. Copy the token (starts with `kubeconfig-user-...`)
+9. Add to GitHub Secrets as `KUBE_TOKEN_STAGING`
+
+**Note:** Service account tokens are preferred because:
+- They don't expire
+- They have minimal, scoped permissions
+- They're not tied to a specific user account
+- They can be easily revoked without affecting other services
 
 ### How to Get Certificate Authority Data
 
@@ -156,7 +320,7 @@ git push origin staging
 ### Step 1: Create Kubernetes Namespace
 
 ```bash
-kubectl create namespace vomeet-staging
+kubectl create namespace vomeet
 ```
 
 ### Step 2: Set Up GitHub Secrets & Variables
@@ -193,16 +357,16 @@ git push origin staging
 
 ```bash
 # Check all pods are running
-kubectl get pods -n vomeet-staging
+kubectl get pods -n vomeet
 
 # Check services
-kubectl get svc -n vomeet-staging
+kubectl get svc -n vomeet
 
 # Check database
-kubectl get clusters.postgresql.cnpg.io -n vomeet-staging
+kubectl get clusters.postgresql.cnpg.io -n vomeet
 
 # Check logs
-kubectl logs -n vomeet-staging deployment/vomeet-api-gateway
+kubectl logs -n vomeet deployment/vomeet-api-gateway
 ```
 
 ## Configuration
@@ -254,7 +418,7 @@ git push origin staging --force-with-lease
 
 ```bash
 # Rollback to previous version
-helm rollback vomeet -n vomeet-staging
+helm rollback vomeet -n vomeet
 
 # Or deploy specific version
 gh workflow run deploy-services-staging.yaml \
@@ -265,11 +429,11 @@ gh workflow run deploy-services-staging.yaml \
 
 ```bash
 # Scale replicas
-kubectl scale deployment vomeet-bot-manager -n vomeet-staging --replicas=2
+kubectl scale deployment vomeet-bot-manager -n vomeet --replicas=2
 
 # Or update Helm values
 helm upgrade vomeet ./chart \
-  -n vomeet-staging \
+  -n vomeet \
   -f chart/values-staging.yaml \
   --set bot-manager.replicaCount=2
 ```
@@ -278,13 +442,13 @@ helm upgrade vomeet ./chart \
 
 ```bash
 # Stream logs from a service
-kubectl logs -n vomeet-staging -f deployment/vomeet-api-gateway
+kubectl logs -n vomeet -f deployment/vomeet-api-gateway
 
 # View all pods logs
-kubectl logs -n vomeet-staging --all-containers=true --tail=100
+kubectl logs -n vomeet --all-containers=true --tail=100
 
 # Follow specific pod
-kubectl logs -n vomeet-staging pod/vomeet-bot-manager-xxx-yyy -f
+kubectl logs -n vomeet pod/vomeet-bot-manager-xxx-yyy -f
 ```
 
 ## Troubleshooting
@@ -293,26 +457,26 @@ kubectl logs -n vomeet-staging pod/vomeet-bot-manager-xxx-yyy -f
 
 ```bash
 # Check pod status
-kubectl get pods -n vomeet-staging
+kubectl get pods -n vomeet
 
 # Describe pod to see events
-kubectl describe pod <pod-name> -n vomeet-staging
+kubectl describe pod <pod-name> -n vomeet
 
 # Check logs
-kubectl logs <pod-name> -n vomeet-staging --previous
+kubectl logs <pod-name> -n vomeet --previous
 ```
 
 ### Database Connection Issues
 
 ```bash
 # Check CNPG cluster status
-kubectl get clusters.postgresql.cnpg.io -n vomeet-staging
+kubectl get clusters.postgresql.cnpg.io -n vomeet
 
 # Check database pods
-kubectl get pods -n vomeet-staging -l cnpg.io/cluster=vomeet-cnpg
+kubectl get pods -n vomeet -l cnpg.io/cluster=vomeet-cnpg
 
 # Test connection
-kubectl run -it --rm debug --image=postgres:17 --restart=Never -n vomeet-staging -- \
+kubectl run -it --rm debug --image=postgres:17 --restart=Never -n vomeet -- \
   psql -h vomeet-cnpg-rw -U vomeet -d vomeet
 ```
 
@@ -320,14 +484,14 @@ kubectl run -it --rm debug --image=postgres:17 --restart=Never -n vomeet-staging
 
 ```bash
 # Check migration job logs
-kubectl logs job/db-migrate -n vomeet-staging
+kubectl logs job/db-migrate -n vomeet
 
 # Manually run migration
-kubectl exec -it deployment/vomeet-transcription-collector -n vomeet-staging -- \
+kubectl exec -it deployment/vomeet-transcription-collector -n vomeet -- \
   alembic -c /app/alembic.ini upgrade head
 
 # Check current version
-kubectl exec -it deployment/vomeet-transcription-collector -n vomeet-staging -- \
+kubectl exec -it deployment/vomeet-transcription-collector -n vomeet -- \
   alembic -c /app/alembic.ini current
 ```
 
@@ -335,7 +499,7 @@ kubectl exec -it deployment/vomeet-transcription-collector -n vomeet-staging -- 
 
 ```bash
 # Check image pull secrets
-kubectl get secrets -n vomeet-staging
+kubectl get secrets -n vomeet
 
 # Manually pull to test
 docker pull ghcr.io/voltade/vomeet-bot-manager:staging
@@ -368,10 +532,10 @@ Staging uses fewer resources than production:
 To further reduce costs:
 ```bash
 # Scale down during non-working hours
-kubectl scale deployment --all --replicas=0 -n vomeet-staging
+kubectl scale deployment --all --replicas=0 -n vomeet
 
 # Scale up when needed
-kubectl scale deployment --all --replicas=1 -n vomeet-staging
+kubectl scale deployment --all --replicas=1 -n vomeet
 ```
 
 ## Security Considerations
