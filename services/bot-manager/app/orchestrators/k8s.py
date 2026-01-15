@@ -157,7 +157,6 @@ async def start_bot_container(
         "botManagerCallbackUrl": K8S_BOT_MANAGER_CALLBACK_URL,
         "scheduledStartTime": scheduled_start_time,  # ISO 8601 string or Unix timestamp in ms
         "scheduledEndTime": scheduled_end_time,  # ISO 8601 string or Unix timestamp in ms
-        "earlyJoinMinutes": 15,  # Join 15 minutes before scheduled start
     }
 
     bot_config_json = json.dumps(bot_config_data)

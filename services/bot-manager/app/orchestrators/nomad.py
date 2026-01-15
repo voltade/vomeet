@@ -113,7 +113,6 @@ async def start_bot_container(
         "task": task or "",
         "scheduled_start_time": scheduled_start_time or "",
         "scheduled_end_time": scheduled_end_time or "",
-        "early_join_minutes": "15",  # Join 15 minutes before scheduled start
     }
 
     # According to Nomad docs, metadata can be supplied in JSON body.

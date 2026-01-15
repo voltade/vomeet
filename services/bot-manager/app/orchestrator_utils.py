@@ -244,7 +244,6 @@ async def start_bot_container(
         "botManagerCallbackUrl": f"http://bot-manager:8080/bots/internal/callback/exited",
         "scheduledStartTime": scheduled_start_time,  # ISO 8601 string or Unix timestamp in ms
         "scheduledEndTime": scheduled_end_time,  # ISO 8601 string or Unix timestamp in ms
-        "earlyJoinMinutes": 15,  # Join 15 minutes before scheduled start
     }
     # Remove keys with None values before serializing
     cleaned_config_data = {k: v for k, v in bot_config_data.items() if v is not None}

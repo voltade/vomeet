@@ -25,7 +25,6 @@ export const BotConfigSchema = z.object({
 	botManagerCallbackUrl: z.string().url().optional(), // ADDED: Optional callback URL
 	scheduledStartTime: z.union([z.string(), z.number()]).nullish(), // ISO 8601 string or Unix timestamp in ms
 	scheduledEndTime: z.union([z.string(), z.number()]).nullish(), // ISO 8601 string or Unix timestamp in ms
-	earlyJoinMinutes: z.number().int().optional(), // Minutes to join before scheduled start
 });
 
 (function main() {

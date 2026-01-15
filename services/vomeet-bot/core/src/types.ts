@@ -23,6 +23,4 @@ export type BotConfig = {
 	scheduledStartTime?: string | number | null;
 	/** Scheduled end time of the meeting as ISO 8601 string or Unix timestamp in milliseconds */
 	scheduledEndTime?: string | number | null;
-	/** Number of minutes to join before scheduled start time (default: 15) */
-	earlyJoinMinutes?: number;
 };
