@@ -16,14 +16,12 @@ on:
         required: false
         default: ""
   workflow_run:
-    workflows: ["Build Services"]
+    workflows: ["Build Services", "Build Services (Staging)"]
     types:
       - completed
     branches:
       - main
-  push:
-    branches:
-      - staging  # Auto-deploy to staging when pushing to staging branch
+      - staging
 
 env:
   REGISTRY: ghcr.io
