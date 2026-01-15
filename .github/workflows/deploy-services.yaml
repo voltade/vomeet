@@ -154,9 +154,15 @@ jobs:
         run: |
           helm dependency update ./chart
 
-      - name: Create namespace
+      - name: Ensure namespace exists
         run: |
-          kubectl create namespace ${{ needs.set-environment.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+          # Check if namespace exists, create only if it doesn't
+          if ! kubectl get namespace ${{ needs.set-environment.outputs.namespace }} > /dev/null 2>&1; then
+            echo "Creating namespace ${{ needs.set-environment.outputs.namespace }}..."
+            kubectl create namespace ${{ needs.set-environment.outputs.namespace }}
+          else
+            echo "Namespace ${{ needs.set-environment.outputs.namespace }} already exists"
+          fi
 
       - name: Deploy Helm chart
         env:
