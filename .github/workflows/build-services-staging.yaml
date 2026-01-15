@@ -34,6 +34,7 @@ jobs:
       bot-manager: ${{ steps.changes.outputs.bot-manager }}
       google-integration: ${{ steps.changes.outputs.google-integration }}
       transcription-collector: ${{ steps.changes.outputs.transcription-collector }}
+      vomeet-bot: ${{ steps.changes.outputs.vomeet-bot }}
       shared-models: ${{ steps.changes.outputs.shared-models }}
       any-changed: ${{ steps.changes.outputs.any-changed }}
     steps:
