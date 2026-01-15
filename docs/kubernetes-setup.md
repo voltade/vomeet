@@ -1,40 +1,49 @@
-# Staging Environment Setup
+# Kubernetes Environment Setup
 
-This document describes how to set up and maintain the staging environment for Vomeet.
+This document describes how to set up and maintain the Kubernetes environments (staging and production) for Vomeet.
 
 ## Overview
 
-The staging environment is a separate Kubernetes cluster for testing that includes:
+Vomeet uses **separate Kubernetes clusters** for staging and production. Both environments use the same `vomeet` namespace within their respective clusters.
+
+| Environment | Cluster | Domain | Image Tag |
+|-------------|---------|--------|-----------|
+| **Staging** | `rancher.voltade.sg` | `vomeet.voltade.sg` | `staging` |
+| **Production** | `rancher.voltade.com` | `vomeet.voltade.com` | `latest` / `stable` |
+
+Each environment includes:
 - All microservices (API Gateway, Bot Manager, Admin API, Google Integration, Transcription Collector)
-- CloudNativePG (PostgreSQL) database with fresh schema
+- CloudNativePG (PostgreSQL) database
 - Dragonfly (Redis alternative)
 - Kubernetes Jobs for bot instances
 
-**Domain:** `https://vomeet.voltade.sg`
-
-**Note:** Staging and production use separate clusters, so both use the `vomeet` namespace within their respective clusters. Staging uses a fresh database with the same schema as production, but no production data is synced.
+**Note:** Staging uses a fresh database with the same schema as production, but no production data is synced.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   Staging Environment                   │
-│              (vomeet namespace - staging cluster)       │
+│              Kubernetes Environment                     │
+│              (vomeet namespace)                         │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
 │  │  API Gateway │  │  Bot Manager │  │   Admin API   │  │
-│  │   (staging)  │  │   (staging)  │  │   (staging)   │  │
 │  └──────┬───────┘  └───────┬──────┘  └───────┬───────┘  │
 │         │                  │                 │          │
 │         └──────────────────┴─────────────────┘          │
 │                            │                            │
-│         ┌──────────────────┴──────────────────┐         │
-│         │                                     │         │
-│  ┌──────▼───────┐                    ┌────────▼──────┐  │
-│  │   CNPG (PG)  │                    │   Dragonfly   │  │
-│  │ (1 instance) │                    │    (Redis)    │  │
-│  └──────────────┘                    └───────────────┘  │
+│  ┌─────────────┐  ┌────────┴────────┐  ┌─────────────┐  │
+│  │   Google    │  │  Transcription  │  │   Vomeet    │  │
+│  │ Integration │  │   Collector     │  │    Bots     │  │
+│  └─────────────┘  └─────────────────┘  │ (K8s Jobs)  │  │
+│                                        └─────────────┘  │
+│         ┌──────────────────┬──────────────────┐         │
+│         │                  │                  │         │
+│  ┌──────▼───────┐  ┌───────▼──────┐  ┌───────▼──────┐   │
+│  │   CNPG (PG)  │  │  Dragonfly   │  │ WhisperLive  │   │
+│  │              │  │   (Redis)    │  │              │   │
+│  └──────────────┘  └──────────────┘  └──────────────┘   │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -47,24 +56,29 @@ Create these secrets in your GitHub repository (Settings → Secrets and variabl
 
 #### Staging Environment Secrets
 
-```bash
-# Kubernetes Access (Staging)
-KUBE_TOKEN_STAGING=<rancher-token-for-staging>
-KUBE_CERTIFICATE_STAGING=<base64-encoded-ca-cert>
+| Secret | Description |
+|--------|-------------|
+| `KUBE_TOKEN_STAGING` | Service account token for staging cluster |
+| `KUBE_CERTIFICATE_STAGING` | Base64-encoded CA certificate |
+| `DB_PASSWORD_STAGING` | PostgreSQL password |
+| `ADMIN_API_TOKEN_STAGING` | Admin API authentication token |
 
-# Database (Staging)
-DB_PASSWORD_STAGING=<random-secure-password>
+#### Production Environment Secrets
 
-# Admin API (Staging)
-ADMIN_API_TOKEN_STAGING=<random-api-token>
+| Secret | Description |
+|--------|-------------|
+| `KUBE_TOKEN_PROD` | Service account token for production cluster |
+| `KUBE_CERTIFICATE_PROD` | Base64-encoded CA certificate |
+| `DB_PASSWORD` | PostgreSQL password |
+| `ADMIN_API_TOKEN` | Admin API authentication token |
 
-# Notifications
-TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
-TELEGRAM_CHAT_ID=<your-telegram-chat-id>
-TELEGRAM_THREAD_ID=<optional-thread-id>
-```
+#### Shared Secrets
 
-
+| Secret | Description |
+|--------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Telegram notifications bot token |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID for notifications |
+| `TELEGRAM_THREAD_ID` | (Optional) Thread ID for notifications |
 
 ### Required Variables
 
@@ -74,6 +88,10 @@ Create these variables in your GitHub repository:
 # Staging Cluster
 KUBE_CLUSTER_NAME_STAGING=local
 KUBE_CLUSTER_URL_STAGING=https://rancher.voltade.sg/k8s/clusters/local
+
+# Production Cluster
+KUBE_CLUSTER_NAME_PROD=local
+KUBE_CLUSTER_URL_PROD=https://rancher.voltade.com/k8s/clusters/local
 ```
 
 ### How to Get Rancher Token (Service Account - Recommended for CI/CD)
@@ -508,20 +526,22 @@ docker pull ghcr.io/voltade/vomeet-bot-manager:staging
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 ```
 
-## Differences from Production
+## Environment Differences
 
-| Feature | Production | Staging |
-|---------|-----------|---------|
-| Domain | vomeet.voltade.com | vomeet.voltade.sg |
-| Image Tag | stable | staging |
-| Database Instances | 3 (HA) | 1 |
-| Service Replicas | 2-3 | 1 |
-| Resources | High | Moderate |
-| Auto-scaling | Enabled | Disabled |
-| Backup Schedule | Daily | None |
-| Test Data | Real user data | Generated test data |
+| Feature | Staging | Production |
+|---------|---------|------------|
+| **Domain** | vomeet.voltade.sg | vomeet.voltade.com |
+| **Cluster URL** | rancher.voltade.sg | rancher.voltade.com |
+| **Image Tag** | `staging` | `latest` / `stable` |
+| **Database Instances** | 1 | 3 (HA) |
+| **Service Replicas** | 1 | 2-3 |
+| **Resources** | Moderate | High |
+| **Auto-scaling** | Disabled | Enabled |
+| **Backup Schedule** | None | Daily |
+| **Data** | Test data | Real user data |
+| **Values File** | `values-staging.yaml` | `values-production.yaml` |
 
-## Cost Optimization
+## Cost Optimization (Staging)
 
 Staging uses fewer resources than production:
 - **CPU:** ~30% of production

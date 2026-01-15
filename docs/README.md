@@ -4,9 +4,14 @@ This directory contains comprehensive documentation for Vomeet self-hosted deplo
 
 ## Available Documentation
 
+### Architecture & Overview
+
+- **[AGENTS.md](../AGENTS.md)** - Architecture overview of all Vomeet services and bot agents
+
 ### Setup & Deployment
 
 - **[Deployment Guide](deployment.md)** - Complete setup and deployment instructions for self-hosted Vomeet
+- **[Kubernetes Setup](kubernetes-setup.md)** - Guide for setting up staging and production environments with Kubernetes
 
 ### User Guides
 
