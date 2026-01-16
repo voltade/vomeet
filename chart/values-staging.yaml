@@ -51,7 +51,7 @@ transcription-collector:
   replicaCount: 1
 
 google-integration:
-  replicaCount: 1
+  redirectUri: "https://vomeet.voltade.sg/google/callback"
 
 # Staging database with smaller resources
 cnpg:
