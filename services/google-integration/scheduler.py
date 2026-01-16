@@ -9,9 +9,6 @@ This module contains:
 
 import os
 import logging
-import hmac
-import hashlib
-import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 
@@ -28,6 +25,7 @@ from shared_models.models import (
     AccountUser,
     AccountUserGoogleIntegration,
 )
+from utils.webhook import send_webhook
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -81,52 +79,6 @@ def get_queue() -> Queue:
     """Get RQ queue for auto-join jobs."""
     conn = get_redis_connection()
     return Queue("auto_join", connection=conn)
-
-
-def compute_signature(payload: str, secret: str) -> str:
-    """Compute HMAC-SHA256 signature for webhook payload."""
-    return hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-def send_webhook(
-    webhook_url: str,
-    webhook_secret: Optional[str],
-    event_type: str,
-    payload: Dict[str, Any],
-) -> bool:
-    """Send a webhook notification."""
-    try:
-        payload_json = json.dumps(payload, default=str)
-
-        headers = {
-            "Content-Type": "application/json",
-            "X-Vomeet-Event": event_type,
-            "X-Vomeet-Timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-        # Add HMAC signature if secret is configured
-        if webhook_secret:
-            signature = compute_signature(payload_json, webhook_secret)
-            headers["X-Vomeet-Signature"] = f"sha256={signature}"
-
-        with httpx.Client() as client:
-            response = client.post(
-                webhook_url,
-                content=payload_json,
-                headers=headers,
-                timeout=30.0,
-            )
-
-            if 200 <= response.status_code < 300:
-                logger.info(f"Successfully sent {event_type} webhook to {webhook_url}")
-                return True
-            else:
-                logger.warning(f"{event_type} webhook to {webhook_url} returned status {response.status_code}")
-                return False
-
-    except httpx.RequestError as e:
-        logger.error(f"Failed to send {event_type} webhook to {webhook_url}: {e}")
-        return False
 
 
 def refresh_token_sync(
@@ -722,28 +674,52 @@ def check_and_enqueue_auto_joins():
 
 def setup_scheduler():
     """
-    Set up the RQ scheduler with periodic auto-join check job.
+    Set up the RQ scheduler with periodic jobs:
+    1. Bot spawn job - spawns bots for upcoming meetings (every minute)
+    2. Channel renewal check - renews push notification channels (every 15 minutes)
+
+    Note: Meeting status sync is handled via callback from bot-manager,
+    not via polling job.
+
     Call this on application startup.
     """
     scheduler = get_scheduler()
 
-    # Clear any existing auto-join jobs
+    # Clear any existing jobs
     for job in scheduler.get_jobs():
-        if "check_and_enqueue_auto_joins" in str(job.func_name):
+        job_name = str(job.func_name)
+        if any(
+            name in job_name
+            for name in [
+                "check_and_enqueue_auto_joins",
+                "spawn_bots_for_upcoming_meetings",
+            ]
+        ):
             scheduler.cancel(job)
             logger.info(f"Cancelled existing scheduler job: {job.id}")
 
-    # Schedule the auto-join check to run every AUTO_JOIN_CHECK_INTERVAL seconds
-    # Use string path so worker can import the function properly
+    # Schedule bot spawn job to run every minute
+    # This checks scheduled_meetings table and spawns bots for upcoming meetings
     scheduler.schedule(
         scheduled_time=datetime.now(timezone.utc),
-        func="scheduler.check_and_enqueue_auto_joins",
-        interval=AUTO_JOIN_CHECK_INTERVAL,
+        func="bot_spawn.spawn_bots_for_upcoming_meetings",
+        interval=60,  # Every minute
         repeat=None,  # Repeat indefinitely
         queue_name="auto_join",
     )
+    logger.info("Scheduled bot spawn job every 60 seconds")
 
-    logger.info(f"Scheduled auto-join check every {AUTO_JOIN_CHECK_INTERVAL} seconds")
+    # Keep the existing channel renewal check (every 15 minutes)
+    # This handles push notification channel renewals
+    scheduler.schedule(
+        scheduled_time=datetime.now(timezone.utc) + timedelta(seconds=60),
+        func="scheduler.check_and_enqueue_auto_joins",
+        interval=AUTO_JOIN_CHECK_INTERVAL,
+        repeat=None,
+        queue_name="auto_join",
+    )
+    logger.info(f"Scheduled channel renewal check every {AUTO_JOIN_CHECK_INTERVAL} seconds")
+
     return scheduler
 
 

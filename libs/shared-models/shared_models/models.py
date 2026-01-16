@@ -16,9 +16,20 @@ from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime  # Needed for Transcription model default
 from shared_models.schemas import Platform  # Import Platform for the static method
 from typing import Optional  # Added for the return type hint in constructed_meeting_url
+from enum import Enum
 
 # Define the base class for declarative models
 Base = declarative_base()
+
+
+class ScheduledMeetingStatus(str, Enum):
+    """Status of a scheduled meeting from calendar sync"""
+
+    SCHEDULED = "scheduled"  # Meeting is scheduled, bot not yet spawned
+    BOT_REQUESTED = "bot_requested"  # Bot spawn has been requested
+    BOT_ACTIVE = "bot_active"  # Bot is active in the meeting
+    COMPLETED = "completed"  # Meeting completed
+    CANCELLED = "cancelled"  # Meeting was cancelled in calendar
 
 
 class User(Base):
@@ -46,36 +57,60 @@ class APIToken(Base):
 
 
 class Meeting(Base):
+    """
+    Bot execution record. Tracks the lifecycle of a bot in a meeting.
+
+    Meeting details (platform, meeting_url, scheduled times) are stored in ScheduledMeeting.
+    This table only stores bot runtime data: status, container_id, actual times, errors.
+
+    For both calendar-synced and ad-hoc meetings, a ScheduledMeeting record is created first,
+    then a Meeting record is created when the bot is spawned.
+    """
+
     __tablename__ = "meetings"
     id = Column(Integer, primary_key=True, index=True)
+
+    # Link to the scheduled meeting (source of truth for meeting details)
+    scheduled_meeting_id = Column(
+        Integer, ForeignKey("scheduled_meetings.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Account-based: account_id is the primary owner (B2B model)
-    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)  # nullable for migration
-    # DEPRECATED: user_id kept for backward compatibility during migration
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # Changed to nullable
-    platform = Column(String(100), nullable=False)  # e.g., 'google_meet', 'zoom'
-    # Database column name is platform_specific_id but we use native_meeting_id in the code
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)
+    # Legacy field - kept for data migration from old meetings
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
+    # Legacy fields - meeting details now live in ScheduledMeeting, kept for data migration
+    platform = Column(String(100), nullable=True)
     platform_specific_id = Column(String(255), index=True, nullable=True)
+    scheduled_start_time = Column(DateTime, nullable=True, index=True)
+    scheduled_end_time = Column(DateTime, nullable=True, index=True)
+
+    # Bot runtime data
     status = Column(
         String(50), nullable=False, default="requested", index=True
     )  # Values: requested, joining, awaiting_admission, active, completed, failed
     bot_container_id = Column(String(255), nullable=True)
-    start_time = Column(DateTime, nullable=True)
-    end_time = Column(DateTime, nullable=True)
-    scheduled_start_time = Column(DateTime, nullable=True, index=True)
-    scheduled_end_time = Column(DateTime, nullable=True, index=True)
+    start_time = Column(DateTime, nullable=True)  # Actual bot join time
+    end_time = Column(DateTime, nullable=True)  # Actual bot leave time
     data = Column(JSONB, nullable=False, default=text("'{}'::jsonb"))
     created_at = Column(DateTime, server_default=func.now(), index=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relationships
+    scheduled_meeting = relationship(
+        "ScheduledMeeting", foreign_keys=[scheduled_meeting_id], back_populates="bot_meetings"
+    )
     account = relationship("Account")
-    user = relationship("User", back_populates="meetings")  # DEPRECATED
+    user = relationship("User", back_populates="meetings")
     transcriptions = relationship("Transcription", back_populates="meeting")
     sessions = relationship("MeetingSession", back_populates="meeting", cascade="all, delete-orphan")
 
     # Composite indexes for efficient lookup
     __table_args__ = (
-        # Account-based index (primary)
+        # Index for looking up by scheduled_meeting
+        Index("ix_meeting_scheduled_meeting_status", "scheduled_meeting_id", "status"),
+        # Legacy index for account-based queries
         Index(
             "ix_meeting_account_platform_native_id_created_at",
             "account_id",
@@ -83,7 +118,7 @@ class Meeting(Base):
             "platform_specific_id",
             "created_at",
         ),
-        # DEPRECATED: user-based index kept for backward compatibility
+        # Legacy index for user-based queries
         Index(
             "ix_meeting_user_platform_native_id_created_at",
             "user_id",
@@ -94,21 +129,55 @@ class Meeting(Base):
         Index("ix_meeting_data_gin", "data", postgresql_using="gin"),
     )
 
-    # Add property getters/setters for compatibility
+    # Convenience properties that delegate to scheduled_meeting
     @property
-    def native_meeting_id(self):
+    def native_meeting_id(self) -> Optional[str]:
+        """Get native meeting ID from scheduled_meeting, fallback to local field for backward compat."""
+        if self.scheduled_meeting:
+            return self.scheduled_meeting.native_meeting_id
         return self.platform_specific_id
 
     @native_meeting_id.setter
     def native_meeting_id(self, value):
+        # For backward compatibility during migration
         self.platform_specific_id = value
 
     @property
-    def constructed_meeting_url(self) -> Optional[str]:  # Added return type hint
-        # Calculate the URL on demand using the static method from schemas.py
-        if self.platform and self.platform_specific_id:
-            return Platform.construct_meeting_url(self.platform, self.platform_specific_id)
+    def effective_platform(self) -> Optional[str]:
+        """Get platform from scheduled_meeting, fallback to local field."""
+        if self.scheduled_meeting:
+            return self.scheduled_meeting.platform
+        return self.platform
+
+    @property
+    def meeting_url(self) -> Optional[str]:
+        """Get meeting URL from scheduled_meeting."""
+        if self.scheduled_meeting:
+            return self.scheduled_meeting.meeting_url
         return None
+
+    @property
+    def constructed_meeting_url(self) -> Optional[str]:
+        """Calculate the URL on demand using platform and native_meeting_id."""
+        platform = self.effective_platform
+        native_id = self.native_meeting_id
+        if platform and native_id:
+            return Platform.construct_meeting_url(platform, native_id)
+        return None
+
+    @property
+    def effective_scheduled_start_time(self) -> Optional[datetime]:
+        """Get scheduled start time from scheduled_meeting, fallback to local field."""
+        if self.scheduled_meeting:
+            return self.scheduled_meeting.scheduled_start_time
+        return self.scheduled_start_time
+
+    @property
+    def effective_scheduled_end_time(self) -> Optional[datetime]:
+        """Get scheduled end time from scheduled_meeting, fallback to local field."""
+        if self.scheduled_meeting:
+            return self.scheduled_meeting.scheduled_end_time
+        return self.scheduled_end_time
 
 
 class Transcription(Base):
@@ -305,3 +374,97 @@ class AccountUserGoogleIntegration(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     account_user = relationship("AccountUser", back_populates="google_integration")
+    scheduled_meetings = relationship("ScheduledMeeting", back_populates="integration", cascade="all, delete-orphan")
+
+
+class ScheduledMeeting(Base):
+    """
+    Single source of truth for meeting requests - both calendar-synced and ad-hoc.
+
+    For calendar meetings:
+    - Created by calendar sync job
+    - Has calendar_event_id, integration_id
+    - Webhooks sent on create/update/cancel
+
+    For ad-hoc meetings (via API):
+    - Created when user calls POST /bots
+    - calendar_event_id = NULL, integration_id = NULL
+    - calendar_provider = 'api'
+
+    Lifecycle:
+    1. Record created (from calendar or API)
+    2. Bot spawn job creates Meeting record, links it here
+    3. Bot status updates reflected in this record's status
+    """
+
+    __tablename__ = "scheduled_meetings"
+    id = Column(Integer, primary_key=True, index=True)
+
+    # User/Account context
+    account_id = Column(Integer, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_user_id = Column(
+        Integer, ForeignKey("account_users.id", ondelete="CASCADE"), nullable=True, index=True
+    )  # NULL for ad-hoc
+    integration_id = Column(
+        Integer,
+        ForeignKey("account_user_google_integrations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,  # NULL for ad-hoc
+    )
+
+    # Calendar event identifiers (NULL for ad-hoc meetings)
+    calendar_event_id = Column(String(255), nullable=True)  # Google Calendar event ID, NULL for ad-hoc
+    calendar_provider = Column(String(50), nullable=False, default="api")  # 'google', 'outlook', 'api' (ad-hoc)
+
+    # Meeting details (required for all meeting types)
+    title = Column(String(500), nullable=True)
+    description = Column(Text, nullable=True)
+    platform = Column(String(100), nullable=False)  # 'google_meet', 'teams', 'zoom', etc.
+    native_meeting_id = Column(String(255), nullable=False)  # Platform-specific meeting ID
+    meeting_url = Column(Text, nullable=True)  # Full meeting URL
+
+    # Schedule
+    scheduled_start_time = Column(DateTime(timezone=True), nullable=True, index=True)  # NULL for immediate ad-hoc
+    scheduled_end_time = Column(DateTime(timezone=True), nullable=True)
+
+    # Organizer info (for calendar meetings)
+    is_creator_self = Column(sqlalchemy.Boolean, nullable=False, default=False)
+    is_organizer_self = Column(sqlalchemy.Boolean, nullable=False, default=False)
+
+    # Status tracking
+    status = Column(String(50), nullable=False, default=ScheduledMeetingStatus.SCHEDULED.value, index=True)
+
+    # Store attendees and other metadata
+    attendees = Column(JSONB, nullable=True)  # List of {email, name, response_status}
+    data = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=lambda: {})
+
+    # Timestamps
+    last_synced_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    account = relationship("Account")
+    account_user = relationship("AccountUser")
+    integration = relationship("AccountUserGoogleIntegration", back_populates="scheduled_meetings")
+    # bot_meetings: all Meeting records created from this scheduled meeting
+    bot_meetings = relationship(
+        "Meeting", foreign_keys="Meeting.scheduled_meeting_id", back_populates="scheduled_meeting"
+    )
+
+    __table_args__ = (
+        # Unique constraint: one calendar event per integration (only for calendar meetings)
+        # Note: This allows multiple ad-hoc meetings with same platform/native_meeting_id
+        UniqueConstraint("integration_id", "calendar_event_id", name="_scheduled_meeting_event_uc"),
+        # Index for finding meetings to spawn bots for
+        Index("ix_scheduled_meeting_spawn", "status", "scheduled_start_time"),
+        # Index for account lookup
+        Index("ix_scheduled_meeting_account", "account_id", "scheduled_start_time"),
+        # Index for duplicate detection (ad-hoc meetings)
+        Index("ix_scheduled_meeting_platform_native", "account_id", "platform", "native_meeting_id", "status"),
+    )
+
+    @property
+    def is_ad_hoc(self) -> bool:
+        """Returns True if this is an ad-hoc meeting (not from calendar)."""
+        return self.calendar_event_id is None

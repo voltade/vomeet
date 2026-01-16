@@ -33,6 +33,8 @@ from shared_models.models import (
     Meeting,
     MeetingSession,
     Transcription,
+    ScheduledMeeting,
+    ScheduledMeetingStatus,
 )
 from shared_models.schemas import (
     MeetingCreate,
@@ -167,11 +169,58 @@ async def update_meeting_status(
     # Assign back the rebuilt data object so SQLAlchemy marks JSONB as changed
     meeting.data = current_data
 
+    # Update ScheduledMeeting status atomically in the same transaction
+    await _sync_scheduled_meeting_status(meeting, new_status, db)
+
     await db.commit()
     await db.refresh(meeting)
 
     logger.info(f"Meeting {meeting.id} status updated from '{old_status}' to '{new_status.value}'")
     return True
+
+
+async def _sync_scheduled_meeting_status(
+    meeting: Meeting,
+    new_status: MeetingStatus,
+    db: AsyncSession,
+) -> None:
+    """
+    Synchronously update ScheduledMeeting status within the same transaction.
+
+    This is called from update_meeting_status() BEFORE commit to ensure atomicity.
+    Maps bot status to scheduled_meeting status:
+    - active → BOT_ACTIVE
+    - completed/failed → COMPLETED (allows rescheduling to reactivate)
+    """
+    # Map meeting (bot) status to scheduled_meeting status
+    status_map = {
+        MeetingStatus.ACTIVE: ScheduledMeetingStatus.BOT_ACTIVE.value,
+        MeetingStatus.COMPLETED: ScheduledMeetingStatus.COMPLETED.value,
+        MeetingStatus.FAILED: ScheduledMeetingStatus.COMPLETED.value,
+    }
+
+    new_scheduled_status = status_map.get(new_status)
+    if not new_scheduled_status:
+        return  # No mapping for statuses like REQUESTED, JOINING, etc.
+
+    if not meeting.scheduled_meeting_id:
+        return  # Legacy ad-hoc meeting without scheduled_meeting link
+
+    try:
+        scheduled_stmt = select(ScheduledMeeting).where(ScheduledMeeting.id == meeting.scheduled_meeting_id)
+        result = await db.execute(scheduled_stmt)
+        scheduled = result.scalar_one_or_none()
+
+        if scheduled and scheduled.status != new_scheduled_status:
+            old_scheduled_status = scheduled.status
+            scheduled.status = new_scheduled_status
+            logger.info(
+                f"Synced scheduled_meeting {scheduled.id} status: {old_scheduled_status} -> {new_scheduled_status} "
+                f"(atomic with meeting {meeting.id} -> {new_status.value})"
+            )
+    except Exception as e:
+        # Log but don't fail the main status update
+        logger.error(f"Failed to sync scheduled_meeting status for meeting {meeting.id}: {e}")
 
 
 from app.tasks.bot_exit_tasks import run_all_tasks
@@ -248,6 +297,73 @@ async def publish_meeting_status_change(
         logger.info(f"Published meeting status change to '{channel}': {new_status}")
     except Exception as e:
         logger.error(f"Failed to publish meeting status change for meeting {meeting_id}: {e}")
+
+    # Update scheduled_meeting status directly (no HTTP call)
+    # Note: This is a fallback for code paths that call publish_meeting_status_change directly.
+    # The primary sync happens atomically in update_meeting_status() via _sync_scheduled_meeting_status().
+    asyncio.create_task(_update_scheduled_meeting_status_fallback(meeting_id, new_status))
+
+
+async def _update_scheduled_meeting_status_fallback(meeting_id: int, new_status: str):
+    """
+    Fallback: Update scheduled_meeting status for code paths that bypass update_meeting_status().
+
+    This is called as a fire-and-forget task from publish_meeting_status_change().
+    The primary sync happens atomically in update_meeting_status() via _sync_scheduled_meeting_status().
+
+    This fallback handles:
+    - Legacy code paths that update Meeting.status directly
+    - External callbacks that go through publish_meeting_status_change
+    """
+    # Map meeting (bot) status to scheduled_meeting status
+    status_map = {
+        "active": ScheduledMeetingStatus.BOT_ACTIVE.value,
+        "completed": ScheduledMeetingStatus.COMPLETED.value,
+        "failed": ScheduledMeetingStatus.COMPLETED.value,  # Allows rescheduling to reactivate
+    }
+
+    new_scheduled_status = status_map.get(new_status)
+    if not new_scheduled_status:
+        return  # No mapping for statuses like 'requested', 'joining', etc.
+
+    try:
+        async with async_session_local() as db:
+            # Find meeting and its scheduled_meeting
+            meeting_stmt = select(Meeting).where(Meeting.id == meeting_id)
+            result = await db.execute(meeting_stmt)
+            meeting = result.scalar_one_or_none()
+
+            if not meeting:
+                logger.warning(f"_update_scheduled_meeting_status: Meeting {meeting_id} not found")
+                return
+
+            if not meeting.scheduled_meeting_id:
+                # Ad-hoc meetings created before this change won't have scheduled_meeting_id
+                logger.debug(f"Meeting {meeting_id} has no scheduled_meeting_id (legacy ad-hoc?)")
+                return
+
+            # Update scheduled_meeting status
+            scheduled_stmt = select(ScheduledMeeting).where(ScheduledMeeting.id == meeting.scheduled_meeting_id)
+            result = await db.execute(scheduled_stmt)
+            scheduled = result.scalar_one_or_none()
+
+            if not scheduled:
+                logger.warning(
+                    f"_update_scheduled_meeting_status: ScheduledMeeting {meeting.scheduled_meeting_id} not found"
+                )
+                return
+
+            if scheduled.status != new_scheduled_status:
+                old_status = scheduled.status
+                scheduled.status = new_scheduled_status
+                await db.commit()
+                logger.info(
+                    f"Updated scheduled_meeting {scheduled.id} status: {old_status} -> {new_scheduled_status} "
+                    f"(triggered by meeting {meeting_id} -> {new_status})"
+                )
+    except Exception as e:
+        # Log as error since this could cause status inconsistency
+        logger.error(f"Failed to update scheduled_meeting status for meeting {meeting_id}: {e}", exc_info=True)
 
 
 async def schedule_status_webhook_task(
@@ -582,28 +698,36 @@ async def request_bot(
             detail=f"Invalid platform/native_meeting_id combination: cannot construct meeting URL",
         )
 
-    existing_meeting_stmt = (
-        select(Meeting)
+    # Check for existing active ScheduledMeeting (not in terminal state)
+    existing_scheduled_stmt = (
+        select(ScheduledMeeting)
         .where(
-            Meeting.account_id == account.id,
-            Meeting.platform == req.platform.value,
-            Meeting.platform_specific_id == native_meeting_id,
-            Meeting.status.in_(["requested", "joining", "awaiting_admission", "active"]),  # All non-terminal statuses
+            ScheduledMeeting.account_id == account.id,
+            ScheduledMeeting.platform == req.platform.value,
+            ScheduledMeeting.native_meeting_id == native_meeting_id,
+            ScheduledMeeting.status.in_(
+                [
+                    ScheduledMeetingStatus.SCHEDULED.value,
+                    ScheduledMeetingStatus.BOT_REQUESTED.value,
+                    ScheduledMeetingStatus.BOT_ACTIVE.value,
+                ]
+            ),
         )
-        .order_by(desc(Meeting.created_at))
+        .order_by(desc(ScheduledMeeting.created_at))
         .limit(1)
     )
+    result = await db.execute(existing_scheduled_stmt)
+    existing_scheduled = result.scalars().first()
 
-    result = await db.execute(existing_meeting_stmt)
-    existing_meeting = result.scalars().first()
-
-    if existing_meeting:
+    if existing_scheduled:
         logger.info(
-            f"Found existing meeting record {existing_meeting.id} with status '{existing_meeting.status}' for account {account.id}, platform '{req.platform.value}', native ID '{native_meeting_id}'."
+            f"Found existing scheduled meeting {existing_scheduled.id} with status '{existing_scheduled.status}' "
+            f"for account {account.id}, platform '{req.platform.value}', native ID '{native_meeting_id}'."
         )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"An active or requested meeting already exists for this platform and meeting ID. Platform: {req.platform.value}, Native Meeting ID: {native_meeting_id}",
+            detail=f"An active or requested meeting already exists for this platform and meeting ID. "
+            f"Platform: {req.platform.value}, Native Meeting ID: {native_meeting_id}",
         )
 
     # --- Fast-fail concurrency limit check (DB-based) ---
@@ -637,25 +761,50 @@ async def request_bot(
                 detail=f"Account has reached the maximum concurrent bot limit ({account_limit}).",
             )
 
-    # Create Meeting record in DB
+    # Meeting metadata for bot runtime
     meeting_data = {}
     if req.passcode:
         meeting_data["passcode"] = req.passcode
 
-    new_meeting = Meeting(
+    # 1. Create ScheduledMeeting record (ad-hoc meeting)
+    new_scheduled = ScheduledMeeting(
         account_id=account.id,
+        account_user_id=None,  # Ad-hoc, no user association
+        integration_id=None,  # Ad-hoc, no calendar integration
+        calendar_event_id=None,  # Ad-hoc, not from calendar
+        calendar_provider="api",  # Source: API call
         platform=req.platform.value,
-        platform_specific_id=native_meeting_id,
-        status=MeetingStatus.REQUESTED.value,
+        native_meeting_id=native_meeting_id,
+        meeting_url=constructed_url,
         scheduled_start_time=req.scheduled_start_time,
         scheduled_end_time=req.scheduled_end_time,
+        status=ScheduledMeetingStatus.BOT_REQUESTED.value,
+        data={"source": "api", "bot_name": req.bot_name} if req.bot_name else {"source": "api"},
+    )
+    db.add(new_scheduled)
+    await db.flush()  # Get the ID without committing
+    logger.info(f"Created ad-hoc scheduled meeting with ID: {new_scheduled.id}")
+
+    # 2. Create Meeting record (bot execution record) linked to ScheduledMeeting
+    new_meeting = Meeting(
+        scheduled_meeting_id=new_scheduled.id,
+        account_id=account.id,
+        # DEPRECATED fields - still populate for backward compatibility
+        platform=req.platform.value,
+        platform_specific_id=native_meeting_id,
+        scheduled_start_time=req.scheduled_start_time,
+        scheduled_end_time=req.scheduled_end_time,
+        # Bot runtime data
+        status=MeetingStatus.REQUESTED.value,
         data=meeting_data,
     )
     db.add(new_meeting)
     await db.commit()
     await db.refresh(new_meeting)
+    await db.refresh(new_scheduled)
+
     meeting_id = new_meeting.id
-    logger.info(f"Created new meeting record with ID: {meeting_id}")
+    logger.info(f"Created new meeting record with ID: {meeting_id}, linked to scheduled_meeting {new_scheduled.id}")
 
     # Publish initial 'requested' status
     try:

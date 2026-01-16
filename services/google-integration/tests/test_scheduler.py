@@ -145,8 +145,8 @@ class TestSpawnBotSync:
     """Tests for spawn_bot_sync function."""
 
     @patch("scheduler.httpx.Client")
-    def test_returns_true_on_success(self, mock_client_class):
-        """Should return True when bot is created successfully."""
+    def test_returns_meeting_data_on_success(self, mock_client_class):
+        """Should return meeting data when bot is created successfully."""
         from scheduler import spawn_bot_sync
 
         mock_client = MagicMock()
@@ -155,16 +155,17 @@ class TestSpawnBotSync:
 
         mock_response = MagicMock()
         mock_response.status_code = 201
+        mock_response.json.return_value = {"id": "meeting_123", "status": "joining"}
         mock_client.post.return_value = mock_response
 
         result = spawn_bot_sync("api_key", "abc-defg-hij", "Notetaker", "Team Standup")
 
-        assert result is True
+        assert result == {"id": "meeting_123", "status": "joining"}
         mock_client.post.assert_called_once()
 
     @patch("scheduler.httpx.Client")
-    def test_returns_true_on_conflict(self, mock_client_class):
-        """Should return True when bot already exists (409)."""
+    def test_returns_already_exists_on_conflict(self, mock_client_class):
+        """Should return already_exists dict when bot already exists (409)."""
         from scheduler import spawn_bot_sync
 
         mock_client = MagicMock()
@@ -177,11 +178,11 @@ class TestSpawnBotSync:
 
         result = spawn_bot_sync("api_key", "abc-defg-hij", "Notetaker", "Team Standup")
 
-        assert result is True
+        assert result == {"already_exists": True}
 
     @patch("scheduler.httpx.Client")
-    def test_returns_false_on_error(self, mock_client_class):
-        """Should return False on other errors."""
+    def test_returns_none_on_error(self, mock_client_class):
+        """Should return None on other errors."""
         from scheduler import spawn_bot_sync
 
         mock_client = MagicMock()
@@ -195,7 +196,7 @@ class TestSpawnBotSync:
 
         result = spawn_bot_sync("api_key", "abc-defg-hij", "Notetaker", "Team Standup")
 
-        assert result is False
+        assert result is None
 
 
 class TestProcessAutoJoinForUser:
@@ -227,7 +228,6 @@ class TestProcessAutoJoinForUser:
             account_user_id=1,
             account_id=1,
             external_user_id="user123",
-            integration_id=1,
             refresh_token="refresh",
             client_id="client",
             client_secret="secret",
@@ -268,7 +268,6 @@ class TestProcessAutoJoinForUser:
             account_user_id=1,
             account_id=1,
             external_user_id="user123",
-            integration_id=1,
             refresh_token="refresh",
             client_id="client",
             client_secret="secret",
@@ -305,7 +304,6 @@ class TestProcessAutoJoinForUser:
             account_user_id=1,
             account_id=1,
             external_user_id="user123",
-            integration_id=1,
             refresh_token="refresh",
             client_id="client",
             client_secret="secret",
@@ -341,7 +339,6 @@ class TestProcessAutoJoinForUser:
             account_user_id=1,
             account_id=1,
             external_user_id="user123",
-            integration_id=1,
             refresh_token="refresh",
             client_id="client",
             client_secret="secret",
@@ -365,7 +362,6 @@ class TestProcessAutoJoinForUser:
             account_user_id=1,
             account_id=1,
             external_user_id="user123",
-            integration_id=1,
             refresh_token="refresh",
             client_id="client",
             client_secret="secret",
@@ -402,7 +398,6 @@ class TestProcessAutoJoinForUser:
             account_user_id=1,
             account_id=1,
             external_user_id="user123",
-            integration_id=1,
             refresh_token="refresh",
             client_id="client",
             client_secret="secret",
@@ -423,13 +418,10 @@ class TestCheckAndEnqueueAutoJoins:
     """Tests for check_and_enqueue_auto_joins function."""
 
     @patch("scheduler.get_queue")
-    @patch("scheduler.get_sync_db_url")
-    def test_enqueues_jobs_for_enabled_users(self, mock_get_db_url, mock_get_queue):
+    def test_enqueues_jobs_for_enabled_users(self, mock_get_queue):
         """Should enqueue jobs for all users with auto_join_enabled."""
         import psycopg2
         from scheduler import check_and_enqueue_auto_joins
-
-        mock_get_db_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
 
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
@@ -444,6 +436,10 @@ class TestCheckAndEnqueueAutoJoins:
                 "api_key": "api_key_1",
                 "google_client_id": "client_id",
                 "google_client_secret": "client_secret",
+                "channel_id": None,
+                "channel_expires_at": None,
+                "webhook_url": "https://example.com/webhook",
+                "webhook_secret": "secret123",
             },
             {
                 "integration_id": 2,
@@ -456,6 +452,10 @@ class TestCheckAndEnqueueAutoJoins:
                 "api_key": "api_key_1",
                 "google_client_id": "client_id",
                 "google_client_secret": "client_secret",
+                "channel_id": "channel_123",
+                "channel_expires_at": None,
+                "webhook_url": None,
+                "webhook_secret": None,
             },
         ]
         mock_conn = MagicMock()
@@ -468,16 +468,14 @@ class TestCheckAndEnqueueAutoJoins:
         with patch.object(psycopg2, "connect", return_value=mock_conn):
             check_and_enqueue_auto_joins()
 
+        # 2 auto-join jobs (no channel renewal since channel_expires_at is None)
         assert mock_queue.enqueue.call_count == 2
 
     @patch("scheduler.get_queue")
-    @patch("scheduler.get_sync_db_url")
-    def test_handles_no_enabled_users(self, mock_get_db_url, mock_get_queue):
+    def test_handles_no_enabled_users(self, mock_get_queue):
         """Should handle case with no enabled users gracefully."""
         import psycopg2
         from scheduler import check_and_enqueue_auto_joins
-
-        mock_get_db_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
 
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = []
@@ -493,13 +491,59 @@ class TestCheckAndEnqueueAutoJoins:
 
         mock_queue.enqueue.assert_not_called()
 
+    @patch("scheduler.get_queue")
+    def test_enqueues_channel_renewal_for_expiring_channels(self, mock_get_queue):
+        """Should enqueue channel renewal jobs for channels expiring within 12 hours."""
+        import psycopg2
+        from scheduler import check_and_enqueue_auto_joins
+
+        now = datetime.now(timezone.utc)
+        expiring_soon = now + timedelta(hours=6)  # Within 12 hours threshold
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            {
+                "integration_id": 1,
+                "account_user_id": 10,
+                "refresh_token": "refresh_token_1",
+                "bot_name": "My Bot",
+                "auto_join_mode": "all_events",
+                "external_user_id": "user123",
+                "account_id": 1,
+                "api_key": "api_key_1",
+                "google_client_id": "client_id",
+                "google_client_secret": "client_secret",
+                "channel_id": "channel_123",
+                "channel_expires_at": expiring_soon,
+                "webhook_url": None,
+                "webhook_secret": None,
+            },
+        ]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = Mock(return_value=False)
+
+        mock_queue = MagicMock()
+        mock_get_queue.return_value = mock_queue
+
+        with patch.object(psycopg2, "connect", return_value=mock_conn):
+            check_and_enqueue_auto_joins()
+
+        # 1 channel renewal + 1 auto-join = 2 total enqueues
+        assert mock_queue.enqueue.call_count == 2
+
+        # Verify the renewal job was enqueued
+        renewal_call = mock_queue.enqueue.call_args_list[0]
+        assert renewal_call[0][0] == "scheduler.renew_channel_for_user"
+        assert renewal_call[1]["integration_id"] == 1
+
 
 class TestSetupScheduler:
     """Tests for setup_scheduler function."""
 
     @patch("scheduler.get_scheduler")
-    def test_schedules_periodic_job(self, mock_get_scheduler):
-        """Should schedule the auto-join check job."""
+    def test_schedules_periodic_jobs(self, mock_get_scheduler):
+        """Should schedule bot_spawn and channel renewal jobs."""
         from scheduler import setup_scheduler
 
         mock_scheduler = MagicMock()
@@ -508,8 +552,19 @@ class TestSetupScheduler:
 
         scheduler = setup_scheduler()
 
-        mock_scheduler.schedule.assert_called_once()
+        # Now schedules TWO jobs: bot_spawn (every 60s) + channel renewal (every 900s)
+        assert mock_scheduler.schedule.call_count == 2
         assert scheduler == mock_scheduler
+
+        # Verify first call is bot_spawn
+        first_call = mock_scheduler.schedule.call_args_list[0]
+        assert first_call[1]["func"] == "bot_spawn.spawn_bots_for_upcoming_meetings"
+        assert first_call[1]["interval"] == 60
+
+        # Verify second call is channel renewal
+        second_call = mock_scheduler.schedule.call_args_list[1]
+        assert second_call[1]["func"] == "scheduler.check_and_enqueue_auto_joins"
+        assert second_call[1]["interval"] == 900
 
     @patch("scheduler.get_scheduler")
     def test_cancels_existing_jobs(self, mock_get_scheduler):

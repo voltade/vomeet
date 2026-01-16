@@ -35,6 +35,8 @@ from shared_models.models import (
     Account,
     AccountUser,
     AccountUserGoogleIntegration,
+    ScheduledMeeting,
+    ScheduledMeetingStatus,
 )
 from shared_models.schemas import (
     CalendarEvent,
@@ -1004,6 +1006,9 @@ async def get_user_upcoming_meetings(
     )
 
 
+# --- Internal Callbacks from Bot Manager ---
+
+
 # --- Push Notification Webhook ---
 
 
@@ -1016,7 +1021,7 @@ async def calendar_push_notification(
     Receive push notifications from Google Calendar API.
 
     Google sends notifications when calendar events change.
-    We use this to trigger immediate checks for upcoming meetings.
+    We sync the calendar and send webhooks for changes.
     """
     # Extract Google's notification headers
     channel_id = request.headers.get("X-Goog-Channel-ID")
@@ -1054,45 +1059,28 @@ async def calendar_push_notification(
             )
             raise HTTPException(status_code=401, detail="Invalid channel token")
 
-        logger.info(f"Calendar changed for account_user {integration.account_user_id}, triggering auto-join check")
+        logger.info(f"Calendar changed for account_user {integration.account_user_id}, syncing calendar")
 
-        # Import here to avoid circular dependency
-        if ENABLE_AUTO_JOIN_SCHEDULER:
+        # Get user and account info
+        stmt = (
+            select(AccountUser, Account)
+            .join(Account, AccountUser.account_id == Account.id)
+            .where(AccountUser.id == integration.account_user_id)
+        )
+        result = await db.execute(stmt)
+        user_account = result.one_or_none()
+
+        if user_account:
+            account_user, account = user_account
+
+            # Sync calendar and send webhooks
             try:
-                from scheduler import process_auto_join_for_user, get_queue
+                from calendar_sync import sync_calendar_for_user
 
-                # Get user and account info
-                stmt = (
-                    select(AccountUser, Account)
-                    .join(Account, AccountUser.account_id == Account.id)
-                    .where(AccountUser.id == integration.account_user_id)
-                )
-                result = await db.execute(stmt)
-                user_account = result.one_or_none()
-
-                if user_account:
-                    account_user, account = user_account
-                    queue = get_queue()
-
-                    # Enqueue immediate check for this user
-                    queue.enqueue(
-                        "scheduler.process_auto_join_for_user",
-                        account_user_id=account_user.id,
-                        account_id=account.id,
-                        external_user_id=account_user.external_user_id,
-                        refresh_token=integration.refresh_token,
-                        client_id=account.google_client_id,
-                        client_secret=account.google_client_secret,
-                        api_key=account.api_key,
-                        bot_name=integration.bot_name,
-                        auto_join_mode=integration.auto_join_mode,
-                        webhook_url=account.webhook_url,
-                        webhook_secret=account.webhook_secret,
-                        job_timeout=120,
-                    )
-                    logger.info(f"Enqueued auto-join check for account_user {account_user.id}")
+                counts = await sync_calendar_for_user(integration, account_user, account, db)
+                logger.info(f"Calendar sync completed for account_user {account_user.id}: {counts}")
             except Exception as e:
-                logger.error(f"Failed to enqueue auto-join check: {e}")
+                logger.error(f"Failed to sync calendar for account_user {account_user.id}: {e}", exc_info=True)
 
     return {"status": "ok", "message": "notification received"}
 

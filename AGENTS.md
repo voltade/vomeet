@@ -70,6 +70,7 @@ Active states: `requested`, `joining`, `awaiting_admission`, `active`, `stopping
 Migrations are managed with Alembic. Migration files live in `libs/shared-models/alembic/versions/`.
 
 ```bash
+source .venv/bin/activate
 # Generate a new migration (auto-detects model changes)
 DB_HOST=localhost DB_PORT=15438 python -m alembic revision --autogenerate -m "description_of_change"
 

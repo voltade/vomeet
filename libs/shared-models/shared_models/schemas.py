@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, EmailStr, field_validator, ValidationInfo
+from pydantic import BaseModel, Field, EmailStr, field_validator, ValidationInfo, ConfigDict
 from datetime import datetime
 from enum import Enum
 import re  # Import re for native ID validation
@@ -383,8 +383,7 @@ class UserResponse(UserBase):
     created_at: datetime
     max_concurrent_bots: int = Field(..., description="Maximum number of concurrent bots allowed for the user")
 
-    class Config:
-        from_attributes = True  # Pydantic v2
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TokenBase(BaseModel):
@@ -400,8 +399,7 @@ class TokenResponse(TokenBase):
     token: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True  # Pydantic v2
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserDetailResponse(UserResponse):
@@ -463,8 +461,7 @@ class AccountResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AccountUserCreate(BaseModel):
@@ -486,8 +483,7 @@ class AccountUserResponse(BaseModel):
     has_google_integration: bool = False
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AccountUserGoogleIntegrationResponse(BaseModel):
@@ -506,9 +502,7 @@ class AccountUserGoogleIntegrationResponse(BaseModel):
     connected_at: datetime = Field(..., alias="created_at")
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class AccountCalendarAuthTokenRequest(BaseModel):
@@ -725,9 +719,7 @@ class MeetingResponse(
 
         return v
 
-    class Config:
-        from_attributes = True  # Pydantic v2
-        use_enum_values = True  # Serialize Platform enum to its string value
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 
 
 # --- Meeting Update Schema ---
@@ -804,9 +796,7 @@ class TranscriptionSegment(BaseModel):
             raise ValueError(f"Invalid language code '{v}'. Must be one of: {sorted(ACCEPTED_LANGUAGE_CODES)}")
         return v
 
-    class Config:
-        from_attributes = True  # Pydantic v2
-        populate_by_name = True  # Allow using both alias and field name (Pydantic v2)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 # --- WebSocket Schema (NEW - Represents data from WhisperLive) ---
@@ -849,9 +839,7 @@ class TranscriptionResponse(BaseModel):  # Doesn't inherit MeetingResponse to av
     # ---
     segments: List[TranscriptionSegment] = Field(..., description="List of transcript segments")
 
-    class Config:
-        from_attributes = True  # Pydantic v2
-        use_enum_values = True
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 
 
 # --- Utility Schemas ---
@@ -915,8 +903,7 @@ class UserTableResponse(BaseModel):
     max_concurrent_bots: int
     # Excludes: data, api_tokens
 
-    class Config:
-        from_attributes = True  # Pydantic v2
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MeetingTableResponse(BaseModel):
@@ -948,9 +935,7 @@ class MeetingTableResponse(BaseModel):
 
         return v
 
-    class Config:
-        from_attributes = True  # Pydantic v2
-        use_enum_values = True
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 
 
 class MeetingSessionResponse(BaseModel):
@@ -961,8 +946,7 @@ class MeetingSessionResponse(BaseModel):
     session_uid: str
     session_start_time: datetime
 
-    class Config:
-        from_attributes = True  # Pydantic v2
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TranscriptionStats(BaseModel):
@@ -1061,9 +1045,7 @@ class GoogleIntegrationResponse(BaseModel):
     connected_at: datetime = Field(..., alias="created_at")
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class GoogleIntegrationUpdate(BaseModel):
@@ -1141,10 +1123,11 @@ class WebhookEventType(str, Enum):
     BOT_ENDED = "bot.ended"
     BOT_FAILED = "bot.failed"
 
-    # Meeting events
+    # Meeting/Calendar events
     MEETING_CREATED = "meeting.created"
     MEETING_UPDATED = "meeting.updated"
     MEETING_RESCHEDULED = "meeting.rescheduled"
+    MEETING_CANCELLED = "meeting.cancelled"
     MEETING_STATUS_CHANGE = "meeting.status_change"
 
     # Transcript events
@@ -1218,8 +1201,7 @@ class WebhookResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WebhookListResponse(BaseModel):
