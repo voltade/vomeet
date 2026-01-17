@@ -135,6 +135,7 @@ Sent when a bot is automatically spawned for a calendar event:
   "calendar_event": {
     "event_id": "google_calendar_event_id_123",
     "title": "Team Standup",
+    "description": "Weekly sync meeting",
     "scheduled_at": "2025-12-23T10:00:00+00:00",
     "is_creator_self": true,
     "is_organizer_self": true,
@@ -161,6 +162,11 @@ Sent when a bot is automatically spawned for a calendar event:
     "account_id": 1
   }
 }
+```
+
+**Field clarification:**
+- `meeting.id` / `meeting.bot_id`: The bot execution record ID (Meeting table)
+- `calendar_event.event_id`: The Google Calendar event ID (string from Google)
 ```
 
 ### meeting.rescheduled Event
@@ -236,6 +242,12 @@ Sent when a calendar event is updated (e.g., title, description, attendees chang
 }
 ```
 
+**Field clarification:**
+- `calendar_event.id`: The ScheduledMeeting record ID (internal database ID)
+- `calendar_event.calendar_event_id`: The Google Calendar event ID (string from Google)
+- `calendar_event.bot_id`: The bot execution record ID (Meeting table), only present if bot was spawned
+```
+
 ### meeting.cancelled Event (Calendar Sync)
 
 Sent when a calendar event is cancelled or deleted:
@@ -268,6 +280,17 @@ Sent when a calendar event is cancelled or deleted:
   }
 }
 ```
+
+**Field clarification:** Same as `meeting.updated` above.
+
+## ID Reference Guide
+
+| Field | Source Table | Description |
+|-------|--------------|-------------|
+| `meeting.id` / `meeting.bot_id` | `meetings` | Bot execution record ID |
+| `calendar_event.id` | `scheduled_meetings` | Internal scheduled meeting record ID |
+| `calendar_event.calendar_event_id` | External | Google Calendar event ID (string) |
+| `calendar_event.bot_id` | `meetings` | Bot execution record ID (if spawned) |
 
 ## Signature Verification
 
