@@ -20,7 +20,9 @@ bot.stopping
 bot.ended
 bot.failed
 meeting.created
+meeting.updated
 meeting.rescheduled
+meeting.cancelled
 transcript.ready
 transcript.segment
 ```
@@ -186,6 +188,78 @@ Sent when a calendar event is rescheduled and the bot joins at the new time:
     "is_creator_self": true,
     "is_organizer_self": true,
     "attendees": [...]
+  },
+  "user": {
+    "external_user_id": "user-123",
+    "account_user_id": 5,
+    "account_id": 1
+  }
+}
+```
+
+### meeting.updated Event (Calendar Sync)
+
+Sent when a calendar event is updated (e.g., title, description, attendees changed):
+
+```json
+{
+  "event": "meeting.updated",
+  "timestamp": "2025-12-23T09:30:00.000000",
+  "calendar_event": {
+    "id": 456,
+    "calendar_event_id": "google_calendar_event_id_123",
+    "calendar_provider": "google",
+    "title": "Team Standup - Updated",
+    "description": "Weekly sync meeting",
+    "platform": "google_meet",
+    "native_meeting_id": "abc-defg-hij",
+    "meeting_url": "https://meet.google.com/abc-defg-hij",
+    "scheduled_start_time": "2025-12-23T10:00:00+00:00",
+    "scheduled_end_time": "2025-12-23T10:30:00+00:00",
+    "is_creator_self": true,
+    "is_organizer_self": true,
+    "status": "scheduled",
+    "attendees": [...],
+    "bot_id": 123
+  },
+  "changes": {
+    "title": {
+      "old": "Team Standup",
+      "new": "Team Standup - Updated"
+    }
+  },
+  "user": {
+    "external_user_id": "user-123",
+    "account_user_id": 5,
+    "account_id": 1
+  }
+}
+```
+
+### meeting.cancelled Event (Calendar Sync)
+
+Sent when a calendar event is cancelled or deleted:
+
+```json
+{
+  "event": "meeting.cancelled",
+  "timestamp": "2025-12-23T09:45:00.000000",
+  "calendar_event": {
+    "id": 456,
+    "calendar_event_id": "google_calendar_event_id_123",
+    "calendar_provider": "google",
+    "title": "Team Standup",
+    "description": "Weekly sync meeting",
+    "platform": "google_meet",
+    "native_meeting_id": "abc-defg-hij",
+    "meeting_url": "https://meet.google.com/abc-defg-hij",
+    "scheduled_start_time": "2025-12-23T10:00:00+00:00",
+    "scheduled_end_time": "2025-12-23T10:30:00+00:00",
+    "is_creator_self": true,
+    "is_organizer_self": true,
+    "status": "cancelled",
+    "attendees": [...],
+    "bot_id": 123
   },
   "user": {
     "external_user_id": "user-123",
